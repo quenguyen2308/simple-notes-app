@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.yourname.simplenotes.AuthPreferencesManagerTest" tests="9" skipped="0" failures="0" errors="0" timestamp="2026-04-16T09:13:29.264Z" hostname="AMPC003" time="0.082">
+  <properties/>
+  <testcase name="AuthPreferencesManager has isBiometricEnabled property" classname="com.yourname.simplenotes.AuthPreferencesManagerTest" time="0.001"/>
+  <testcase name="clearAll semantics" classname="com.yourname.simplenotes.AuthPreferencesManagerTest" time="0.0"/>
+  <testcase name="AuthPreferencesManager is a public class" classname="com.yourname.simplenotes.AuthPreferencesManagerTest" time="0.001"/>
+  <testcase name="AuthPreferencesManager can be referenced as a type" classname="com.yourname.simplenotes.AuthPreferencesManagerTest" time="0.077"/>
+  <testcase name="AuthPreferencesManager has a constructor that accepts Context" classname="com.yourname.simplenotes.AuthPreferencesManagerTest" time="0.002"/>
+  <testcase name="AuthPreferencesManager has clearAll method" classname="com.yourname.simplenotes.AuthPreferencesManagerTest" time="0.0"/>
+  <testcase name="AuthPreferencesManager has isAuthRequired property" classname="com.yourname.simplenotes.AuthPreferencesManagerTest" time="0.0"/>
+  <testcase name="default state is auth disabled" classname="com.yourname.simplenotes.AuthPreferencesManagerTest" time="0.0"/>
+  <testcase name="boolean flags are independent concepts" classname="com.yourname.simplenotes.AuthPreferencesManagerTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

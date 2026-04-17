@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.yourname.simplenotes.PinAuthManagerTest" tests="14" skipped="0" failures="0" errors="0" timestamp="2026-04-16T09:13:31.663Z" hostname="AMPC003" time="2.854">
+  <properties/>
+  <testcase name="PIN validation logic - valid 4 digit PIN" classname="com.yourname.simplenotes.PinAuthManagerTest" time="0.001"/>
+  <testcase name="PIN constants are defined correctly" classname="com.yourname.simplenotes.PinAuthManagerTest" time="0.0"/>
+  <testcase name="PIN validation logic - valid 6 digit PIN" classname="com.yourname.simplenotes.PinAuthManagerTest" time="0.0"/>
+  <testcase name="different PINs produce different bcrypt hashes" classname="com.yourname.simplenotes.PinAuthManagerTest" time="0.62"/>
+  <testcase name="MIN_PIN_LENGTH is less than or equal to MAX_PIN_LENGTH" classname="com.yourname.simplenotes.PinAuthManagerTest" time="0.0"/>
+  <testcase name="bcrypt hash has expected format" classname="com.yourname.simplenotes.PinAuthManagerTest" time="0.304"/>
+  <testcase name="PIN validation logic - non-numeric characters" classname="com.yourname.simplenotes.PinAuthManagerTest" time="0.0"/>
+  <testcase name="incorrect PIN fails bcrypt verification" classname="com.yourname.simplenotes.PinAuthManagerTest" time="0.542"/>
+  <testcase name="same PIN can be verified multiple times with same hash" classname="com.yourname.simplenotes.PinAuthManagerTest" time="1.112"/>
+  <testcase name="MAX_ATTEMPTS is positive" classname="com.yourname.simplenotes.PinAuthManagerTest" time="0.0"/>
+  <testcase name="PIN validation logic - empty string" classname="com.yourname.simplenotes.PinAuthManagerTest" time="0.0"/>
+  <testcase name="PIN validation logic - too long PIN" classname="com.yourname.simplenotes.PinAuthManagerTest" time="0.0"/>
+  <testcase name="bcrypt cost factor 12 is used" classname="com.yourname.simplenotes.PinAuthManagerTest" time="0.274"/>
+  <testcase name="PIN validation logic - too short PIN" classname="com.yourname.simplenotes.PinAuthManagerTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

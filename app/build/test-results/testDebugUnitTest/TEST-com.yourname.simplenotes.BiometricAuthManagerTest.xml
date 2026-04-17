@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.yourname.simplenotes.BiometricAuthManagerTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-04-16T09:13:29.395Z" hostname="AMPC003" time="1.949">
+  <properties/>
+  <testcase name="BiometricAuthManager can be instantiated with a context" classname="com.yourname.simplenotes.BiometricAuthManagerTest" time="1.447"/>
+  <testcase name="BiometricResult Error has correct runtime type" classname="com.yourname.simplenotes.BiometricAuthManagerTest" time="0.001"/>
+  <testcase name="BiometricResult Failed has correct runtime type" classname="com.yourname.simplenotes.BiometricAuthManagerTest" time="0.001"/>
+  <testcase name="BiometricResult subtypes are all distinct" classname="com.yourname.simplenotes.BiometricAuthManagerTest" time="0.001"/>
+  <testcase name="isBiometricAvailable does not throw unexpected exceptions" classname="com.yourname.simplenotes.BiometricAuthManagerTest" time="0.498"/>
+  <testcase name="BiometricResult Error data class equality works" classname="com.yourname.simplenotes.BiometricAuthManagerTest" time="0.001"/>
+  <testcase name="BiometricResult Error preserves code and message" classname="com.yourname.simplenotes.BiometricAuthManagerTest" time="0.0"/>
+  <testcase name="BiometricResult Success has correct runtime type" classname="com.yourname.simplenotes.BiometricAuthManagerTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

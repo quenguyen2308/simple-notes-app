@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.yourname.simplenotes.PinEntryViewModelTest" tests="28" skipped="0" failures="0" errors="0" timestamp="2026-04-16T09:13:34.519Z" hostname="AMPC003" time="0.007">
+  <properties/>
+  <testcase name="PinEntryViewModel has state property" classname="com.yourname.simplenotes.PinEntryViewModelTest" time="0.002"/>
+  <testcase name="failedAttempts semantic test" classname="com.yourname.simplenotes.PinEntryViewModelTest" time="0.0"/>
+  <testcase name="PinEntryState ConfirmPin is a valid state type" classname="com.yourname.simplenotes.PinEntryViewModelTest" time="0.001"/>
+  <testcase name="PinEntryState TooManyAttempts is a valid state type" classname="com.yourname.simplenotes.PinEntryViewModelTest" time="0.0"/>
+  <testcase name="PinEntryViewModel has onBackspace method" classname="com.yourname.simplenotes.PinEntryViewModelTest" time="0.0"/>
+  <testcase name="PIN state machine document initial state logic" classname="com.yourname.simplenotes.PinEntryViewModelTest" time="0.0"/>
+  <testcase name="PinEntryViewModel has submit method" classname="com.yourname.simplenotes.PinEntryViewModelTest" time="0.0"/>
+  <testcase name="PinEntryViewModel has pinConfirm property" classname="com.yourname.simplenotes.PinEntryViewModelTest" time="0.0"/>
+  <testcase name="SetPin state represents first-time PIN entry" classname="com.yourname.simplenotes.PinEntryViewModelTest" time="0.0"/>
+  <testcase name="pinInput and pinConfirm buffers are independent" classname="com.yourname.simplenotes.PinEntryViewModelTest" time="0.0"/>
+  <testcase name="backspace removes last character from buffer" classname="com.yourname.simplenotes.PinEntryViewModelTest" time="0.0"/>
+  <testcase name="TooManyAttempts state represents lockout" classname="com.yourname.simplenotes.PinEntryViewModelTest" time="0.0"/>
+  <testcase name="PinEntryState PinSuccess is a valid state type" classname="com.yourname.simplenotes.PinEntryViewModelTest" time="0.0"/>
+  <testcase name="errorMessage semantic test" classname="com.yourname.simplenotes.PinEntryViewModelTest" time="0.0"/>
+  <testcase name="PinEntryViewModel has onDigit method" classname="com.yourname.simplenotes.PinEntryViewModelTest" time="0.001"/>
+  <testcase name="PinEntryViewModel has errorMessage property" classname="com.yourname.simplenotes.PinEntryViewModelTest" time="0.0"/>
+  <testcase name="auto-submit is triggered at MAX_PIN_LENGTH" classname="com.yourname.simplenotes.PinEntryViewModelTest" time="0.0"/>
+  <testcase name="PinEntryState SetPin is a valid state type" classname="com.yourname.simplenotes.PinEntryViewModelTest" time="0.001"/>
+  <testcase name="VerifyPin state represents PIN verification on unlock" classname="com.yourname.simplenotes.PinEntryViewModelTest" time="0.0"/>
+  <testcase name="PinEntryViewModel has pinInput property" classname="com.yourname.simplenotes.PinEntryViewModelTest" time="0.0"/>
+  <testcase name="ConfirmPin state represents PIN confirmation" classname="com.yourname.simplenotes.PinEntryViewModelTest" time="0.0"/>
+  <testcase name="PinSuccess state represents authentication success" classname="com.yourname.simplenotes.PinEntryViewModelTest" time="0.0"/>
+  <testcase name="PinEntryState VerifyPin is a valid state type" classname="com.yourname.simplenotes.PinEntryViewModelTest" time="0.0"/>
+  <testcase name="all PinEntryState subtypes are distinct" classname="com.yourname.simplenotes.PinEntryViewModelTest" time="0.0"/>
+  <testcase name="PinEntryState has exactly 5 subtypes" classname="com.yourname.simplenotes.PinEntryViewModelTest" time="0.0"/>
+  <testcase name="PIN buffer is capped at MAX_PIN_LENGTH" classname="com.yourname.simplenotes.PinEntryViewModelTest" time="0.0"/>
+  <testcase name="PinEntryViewModel has failedAttempts property" classname="com.yourname.simplenotes.PinEntryViewModelTest" time="0.0"/>
+  <testcase name="PinEntryViewModel extends ViewModel" classname="com.yourname.simplenotes.PinEntryViewModelTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

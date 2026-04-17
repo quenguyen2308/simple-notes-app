@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.yourname.simplenotes.AuthViewModelTest" tests="22" skipped="0" failures="0" errors="0" timestamp="2026-04-16T09:13:29.350Z" hostname="AMPC003" time="0.04">
+  <properties/>
+  <testcase name="AuthViewModel has authState property" classname="com.yourname.simplenotes.AuthViewModelTest" time="0.004"/>
+  <testcase name="AuthState AuthFailed stores message and is a data class" classname="com.yourname.simplenotes.AuthViewModelTest" time="0.001"/>
+  <testcase name="AuthState ReadyForBiometric is a valid state type" classname="com.yourname.simplenotes.AuthViewModelTest" time="0.001"/>
+  <testcase name="AuthFailed data class equality with same message" classname="com.yourname.simplenotes.AuthViewModelTest" time="0.0"/>
+  <testcase name="AuthState Authenticating is a valid state type" classname="com.yourname.simplenotes.AuthViewModelTest" time="0.001"/>
+  <testcase name="AuthState AuthError stores message and is a data class" classname="com.yourname.simplenotes.AuthViewModelTest" time="0.001"/>
+  <testcase name="AuthError data class equality with same message" classname="com.yourname.simplenotes.AuthViewModelTest" time="0.0"/>
+  <testcase name="AuthViewModel has resetAuthState method" classname="com.yourname.simplenotes.AuthViewModelTest" time="0.026"/>
+  <testcase name="AuthState Idle is a valid state type" classname="com.yourname.simplenotes.AuthViewModelTest" time="0.0"/>
+  <testcase name="state transition from Idle to Authenticating represents start of auth" classname="com.yourname.simplenotes.AuthViewModelTest" time="0.0"/>
+  <testcase name="ReadyForBiometric state indicates biometric is available and enabled" classname="com.yourname.simplenotes.AuthViewModelTest" time="0.0"/>
+  <testcase name="AuthState is sealed class (no direct instantiation)" classname="com.yourname.simplenotes.AuthViewModelTest" time="0.001"/>
+  <testcase name="AuthError data class inequality with different message" classname="com.yourname.simplenotes.AuthViewModelTest" time="0.0"/>
+  <testcase name="state transition from Authenticating to AuthError represents error" classname="com.yourname.simplenotes.AuthViewModelTest" time="0.001"/>
+  <testcase name="AuthState has exactly 6 subtypes" classname="com.yourname.simplenotes.AuthViewModelTest" time="0.0"/>
+  <testcase name="AuthViewModel extends ViewModel" classname="com.yourname.simplenotes.AuthViewModelTest" time="0.001"/>
+  <testcase name="state transition from Authenticating to AuthFailed represents user failure" classname="com.yourname.simplenotes.AuthViewModelTest" time="0.0"/>
+  <testcase name="AuthViewModel has authenticateWithBiometric method" classname="com.yourname.simplenotes.AuthViewModelTest" time="0.0"/>
+  <testcase name="state transition from Authenticating to AuthSuccess represents success" classname="com.yourname.simplenotes.AuthViewModelTest" time="0.0"/>
+  <testcase name="AuthState AuthSuccess is a valid state type" classname="com.yourname.simplenotes.AuthViewModelTest" time="0.001"/>
+  <testcase name="all AuthState subtypes are distinct from each other" classname="com.yourname.simplenotes.AuthViewModelTest" time="0.0"/>
+  <testcase name="AuthFailed data class inequality with different message" classname="com.yourname.simplenotes.AuthViewModelTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

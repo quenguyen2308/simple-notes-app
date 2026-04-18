@@ -5,9 +5,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.fragment.app.FragmentActivity
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.yourname.simplenotes.ui.auth.AuthNavigation
 import com.yourname.simplenotes.ui.auth.AuthScreen
 import com.yourname.simplenotes.ui.auth.AuthViewModel
@@ -18,7 +20,7 @@ import com.yourname.simplenotes.ui.search.SearchScreen
 
 // Route constants for the main graph
 private const val ROUTE_LIST = "list"
-private const val ROUTE_EDITOR = "editor/{noteId}"
+private const val ROUTE_EDITOR = "editor/{noteId}?categoryId={categoryId}"
 private const val ROUTE_EDITOR_PREFIX = "editor"
 private const val ROUTE_SEARCH = "search"
 
@@ -37,6 +39,7 @@ private const val ROUTE_SEARCH = "search"
 fun AppNavigation(
     activity: FragmentActivity,
     requiresAuth: Boolean = false,
+    onThemeChange: (String) -> Unit = {},
     navController: NavHostController = rememberNavController()
 ) {
     val startDestination = if (requiresAuth) AuthNavigation.ROUTE_AUTH else ROUTE_LIST
@@ -83,8 +86,15 @@ fun AppNavigation(
         composable(ROUTE_LIST) {
             NoteListScreen(
                 onNoteClick = { id -> navController.navigate("$ROUTE_EDITOR_PREFIX/$id") },
-                onNewNote = { navController.navigate("$ROUTE_EDITOR_PREFIX/new") },
-                onSearchClick = { navController.navigate(ROUTE_SEARCH) }
+                onNewNote = { categoryId ->
+                    val route = if (categoryId != null)
+                        "$ROUTE_EDITOR_PREFIX/new?categoryId=$categoryId"
+                    else
+                        "$ROUTE_EDITOR_PREFIX/new"
+                    navController.navigate(route)
+                },
+                onSearchClick = { navController.navigate(ROUTE_SEARCH) },
+                onThemeChange = onThemeChange
             )
         }
 
@@ -99,10 +109,18 @@ fun AppNavigation(
             )
         }
 
-        composable(ROUTE_EDITOR) { backStackEntry ->
+        composable(
+            route = ROUTE_EDITOR,
+            arguments = listOf(
+                navArgument("noteId") { type = NavType.StringType },
+                navArgument("categoryId") { type = NavType.StringType; nullable = true; defaultValue = null }
+            )
+        ) { backStackEntry ->
             val noteId = backStackEntry.arguments?.getString("noteId")
+            val categoryId = backStackEntry.arguments?.getString("categoryId")
             NoteEditorScreen(
                 noteId = noteId,
+                initialCategoryId = categoryId,
                 onBack = { navController.popBackStack() }
             )
         }

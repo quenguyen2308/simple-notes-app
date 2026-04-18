@@ -1,17 +1,22 @@
 package com.yourname.simplenotes.ui.notes
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import com.yourname.simplenotes.data.repository.CategoryRepository
 import com.yourname.simplenotes.data.repository.NoteRepository
 import com.yourname.simplenotes.domain.model.Category
 import com.yourname.simplenotes.domain.model.Note
 import com.yourname.simplenotes.sync.SyncScheduler
+import com.yourname.simplenotes.sync.SyncWorker
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -20,8 +25,16 @@ import java.util.UUID
 class NoteListViewModel(
     private val repository: NoteRepository,
     private val syncScheduler: SyncScheduler,
-    private val categoryRepository: CategoryRepository
+    private val categoryRepository: CategoryRepository,
+    context: Context
 ) : ViewModel() {
+
+    /** True while the immediate sync job is RUNNING — used to show a loading indicator. */
+    val isSyncing: StateFlow<Boolean> =
+        WorkManager.getInstance(context)
+            .getWorkInfosForUniqueWorkFlow(SyncWorker.WORK_NAME_IMMEDIATE)
+            .map { infos -> infos.any { it.state == WorkInfo.State.RUNNING } }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     /** Currently selected category filter (null = show all). */
     val selectedCategoryId = MutableStateFlow<String?>(null)
@@ -89,21 +102,20 @@ class NoteListViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     init {
-        // Pull latest from Drive whenever the list screen is active
         syncScheduler.triggerImmediateSync()
-
-        // Select first category on initialization
         viewModelScope.launch {
-            categories.collect { cats ->
-                if (cats.isNotEmpty() && selectedCategoryId.value == null) {
-                    selectedCategoryId.value = cats.first().id
-                }
+            categories.first { it.isNotEmpty() }.also { cats ->
+                selectedCategoryId.value = cats.first().id
             }
         }
     }
 
     fun deleteNote(id: String) {
         viewModelScope.launch { repository.delete(id) }
+    }
+
+    fun saveNote(note: Note) {
+        viewModelScope.launch { repository.save(note) }
     }
 
     /** Delete multiple notes by IDs. */
@@ -117,6 +129,16 @@ class NoteListViewModel(
             ids.forEach { id ->
                 val note = repository.getById(id) ?: return@forEach
                 repository.save(note.copy(folderId = folderId, isDirty = true))
+            }
+        }
+    }
+
+    /** Lock or unlock multiple notes by IDs. */
+    fun lockNotes(ids: List<String>, locked: Boolean) {
+        viewModelScope.launch {
+            ids.forEach { id ->
+                val note = repository.getById(id) ?: return@forEach
+                repository.save(note.copy(isLocked = locked, isDirty = true))
             }
         }
     }
@@ -151,10 +173,7 @@ class NoteListViewModel(
 
     fun reorderCategories(categoryIds: List<String>) {
         viewModelScope.launch {
-            categoryIds.forEachIndexed { index, id ->
-                // Placeholder for future drag-drop order persistence
-                val category = categories.value.find { it.id == id } ?: return@forEachIndexed
-            }
+            categoryRepository.reorderFolders(null, categoryIds)
         }
     }
 }

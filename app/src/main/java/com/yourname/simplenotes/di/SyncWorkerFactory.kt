@@ -5,6 +5,7 @@ import androidx.work.ListenableWorker
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import com.yourname.simplenotes.data.remote.DriveDataSource
+import com.yourname.simplenotes.data.repository.CategoryRepository
 import com.yourname.simplenotes.data.repository.NoteRepository
 import com.yourname.simplenotes.sync.SyncWorker
 
@@ -14,7 +15,8 @@ import com.yourname.simplenotes.sync.SyncWorker
  */
 class SyncWorkerFactory(
     private val repository: NoteRepository,
-    private val driveDataSource: DriveDataSource
+    private val driveDataSource: DriveDataSource,
+    private val categoryRepository: CategoryRepository
 ) : WorkerFactory() {
 
     override fun createWorker(
@@ -23,7 +25,7 @@ class SyncWorkerFactory(
         workerParameters: WorkerParameters
     ): ListenableWorker? {
         return if (workerClassName == SyncWorker::class.java.name) {
-            SyncWorker(appContext, workerParameters, repository, driveDataSource)
+            SyncWorker(appContext, workerParameters, repository, driveDataSource, categoryRepository)
         } else null
     }
 }

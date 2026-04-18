@@ -11,11 +11,17 @@ interface CategoryDao {
     @Query("SELECT * FROM categories ORDER BY `order` ASC, name ASC")
     fun observeAll(): Flow<List<CategoryEntity>>
 
+    @Query("SELECT * FROM categories ORDER BY `order` ASC, name ASC")
+    suspend fun getAll(): List<CategoryEntity>
+
     @Query("SELECT * FROM categories WHERE id = :id")
     suspend fun getById(id: String): CategoryEntity?
 
     @Upsert
     suspend fun upsert(category: CategoryEntity)
+
+    @Upsert
+    suspend fun upsertAll(categories: List<CategoryEntity>)
 
     @Query("DELETE FROM categories WHERE id = :id")
     suspend fun delete(id: String)

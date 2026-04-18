@@ -23,6 +23,9 @@ class NoteRepositoryImpl(
     override suspend fun getById(id: String): Note? =
         dao.getById(id)?.toDomain()
 
+    override suspend fun getByIdIncludeDeleted(id: String): Note? =
+        dao.getByIdIncludeDeleted(id)?.toDomain()
+
     override suspend fun save(note: Note) {
         dao.upsert(note.toEntity())
         // Update FTS index with plain text extracted from content blocks

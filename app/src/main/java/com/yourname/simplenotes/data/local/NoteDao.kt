@@ -15,6 +15,10 @@ interface NoteDao {
     @Query("SELECT * FROM notes WHERE id = :id AND isDeleted = 0")
     suspend fun getById(id: String): NoteEntity?
 
+    /** Includes soft-deleted rows — used by SyncWorker for timestamp-based conflict detection. */
+    @Query("SELECT * FROM notes WHERE id = :id")
+    suspend fun getByIdIncludeDeleted(id: String): NoteEntity?
+
     /** Returns notes that need to be uploaded to Drive. */
     @Query("SELECT * FROM notes WHERE isDirty = 1")
     suspend fun getDirtyNotes(): List<NoteEntity>

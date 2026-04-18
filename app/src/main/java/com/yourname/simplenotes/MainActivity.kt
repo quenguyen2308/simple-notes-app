@@ -2,9 +2,13 @@ package com.yourname.simplenotes
 
 import android.os.Bundle
 import android.util.Log
+import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -15,6 +19,7 @@ import com.yourname.simplenotes.data.remote.DriveAuthManager
 import com.yourname.simplenotes.sync.SyncScheduler
 import com.yourname.simplenotes.ui.AppNavigation
 import com.yourname.simplenotes.ui.auth.SignInScreen
+import com.yourname.simplenotes.ui.settings.SettingsPrefs
 import com.yourname.simplenotes.ui.theme.SimpleNotesTheme
 import org.koin.android.ext.android.inject
 
@@ -30,9 +35,12 @@ class MainActivity : AppCompatActivity() {
     private val authManager: DriveAuthManager by inject()
     private val syncScheduler: SyncScheduler by inject()
 
-    // Drive sign-in; recompose when sign-in state changes
+    private var lastBackPressTime = 0L
+
     private var isSignedIn by mutableStateOf(false)
     private var signInError by mutableStateOf<String?>(null)
+    /** "system" | "light" | "dark" — triggers recompose on change */
+    private var themeMode by mutableStateOf("system")
 
     private val signInLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -42,6 +50,8 @@ class MainActivity : AppCompatActivity() {
             task.getResult(ApiException::class.java)
             isSignedIn = true
             signInError = null
+            // Trigger immediate pull from Drive so device 2 sees device 1's data right away
+            syncScheduler.triggerImmediateSync()
         } catch (e: ApiException) {
             // Status code 10 = DEVELOPER_ERROR: SHA-1 fingerprint not registered in Google Cloud Console
             Log.e("GoogleSignIn", "Sign-in failed. Status code: ${e.statusCode}", e)
@@ -56,20 +66,42 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // For testing/debug: Skip Google Sign-in and go directly to app
-        isSignedIn = true // authManager.getSignedInAccount() != null
+        // Double-back-to-exit: registered first (lowest priority in LIFO chain).
+        // NavHost and editor callbacks take precedence when they are active.
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                val now = System.currentTimeMillis()
+                if (now - lastBackPressTime < 2000L) {
+                    finish()
+                } else {
+                    lastBackPressTime = now
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Nhấn Back lần nữa để thoát",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        })
 
-        // Check whether the user has enabled biometric lock before entering composition
+        isSignedIn = authManager.getSignedInAccount() != null
+        themeMode = SettingsPrefs(this).themeMode
         val requiresAuth = AuthPreferencesManager(this).isBiometricEnabled
 
         setContent {
-            SimpleNotesTheme {
+            val systemDark = isSystemInDarkTheme()
+            val darkTheme = when (themeMode) {
+                "dark"  -> true
+                "light" -> false
+                else    -> systemDark
+            }
+            SimpleNotesTheme(darkTheme = darkTheme) {
                 if (isSignedIn) {
-                    syncScheduler.schedulePeriodicSync()
-                    // `this` is AppCompatActivity → FragmentActivity; safe to pass directly
+                    LaunchedEffect(Unit) { syncScheduler.schedulePeriodicSync() }
                     AppNavigation(
                         activity = this@MainActivity,
-                        requiresAuth = requiresAuth
+                        requiresAuth = requiresAuth,
+                        onThemeChange = { themeMode = it }
                     )
                 } else {
                     SignInScreen(

@@ -2,11 +2,13 @@ package com.yourname.simplenotes.data.remote
 
 import com.google.api.client.http.ByteArrayContent
 import com.google.api.services.drive.Drive
+import com.yourname.simplenotes.domain.model.Category
 import com.yourname.simplenotes.domain.model.Note
 import com.yourname.simplenotes.domain.model.fromJson
 import com.yourname.simplenotes.domain.model.toJson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -52,25 +54,30 @@ class DriveDataSource(private val authManager: DriveAuthManager) {
     }
 
     /**
-     * Downloads all note files from Drive.
-     * Only called for IDs that need updating (based on index comparison in SyncWorker).
+     * Downloads only the specific note files whose IDs are in [noteIds].
+     * One LIST call to resolve filenames → fileIds, then one GET per needed note.
      */
-    suspend fun downloadAllNotes(): List<Note> = withContext(Dispatchers.IO) {
+    suspend fun downloadNotes(noteIds: Set<String>): List<Note> = withContext(Dispatchers.IO) {
         val drive = drive() ?: return@withContext emptyList()
         runCatching {
             val files = drive.files().list()
                 .setSpaces("appDataFolder")
                 .setQ("name contains 'note_' and mimeType = 'application/json'")
-                .setFields("files(id, name, modifiedTime)")
+                .setFields("files(id, name)")
                 .execute()
                 .files ?: emptyList()
 
-            files.mapNotNull { file ->
-                runCatching {
-                    val stream = drive.files().get(file.id).executeMediaAsInputStream()
-                    Note.fromJson(stream.bufferedReader().readText())
-                }.getOrNull()
-            }
+            files
+                .filter { file ->
+                    val noteId = file.name.removePrefix("note_").removeSuffix(".json")
+                    noteId in noteIds
+                }
+                .mapNotNull { file ->
+                    runCatching {
+                        val stream = drive.files().get(file.id).executeMediaAsInputStream()
+                        Note.fromJson(stream.bufferedReader().readText())
+                    }.getOrNull()
+                }
         }.getOrElse { emptyList() }
     }
 
@@ -105,6 +112,85 @@ class DriveDataSource(private val authManager: DriveAuthManager) {
         }
     }
 
+    /**
+     * Uploads categories + deleted IDs to Drive as a single categories.json.
+     * Format: { "categories": [...], "deletedIds": [...] }
+     */
+    suspend fun uploadCategories(
+        categories: List<Category>,
+        deletedIds: Set<String> = emptySet()
+    ) = withContext(Dispatchers.IO) {
+        val drive = drive() ?: return@withContext
+        runCatching {
+            val json = JSONObject().apply {
+                put("categories", JSONArray().apply {
+                    categories.forEach { cat ->
+                        put(JSONObject().apply {
+                            put("id", cat.id)
+                            put("name", cat.name)
+                            put("colorArgb", cat.colorArgb)
+                            put("parentId", cat.parentId ?: JSONObject.NULL)
+                            put("order", cat.order)
+                        })
+                    }
+                })
+                put("deletedIds", JSONArray(deletedIds.toList()))
+            }.toString()
+
+            val content = ByteArrayContent("application/json", json.toByteArray())
+            val metadata = com.google.api.services.drive.model.File().setName("categories.json")
+            val existingId = findFileId(drive, "categories.json")
+            if (existingId != null) {
+                drive.files().update(existingId, metadata, content).execute()
+            } else {
+                metadata.setParents(listOf("appDataFolder"))
+                drive.files().create(metadata, content).execute()
+            }
+        }
+    }
+
+    /**
+     * Downloads categories.json from Drive.
+     * Handles both old format (plain JSONArray) and new format (JSONObject with deletedIds).
+     */
+    suspend fun downloadCategories(): CategorySyncPayload = withContext(Dispatchers.IO) {
+        val drive = drive() ?: return@withContext CategorySyncPayload.EMPTY
+        runCatching {
+            val fileId = findFileId(drive, "categories.json")
+                ?: return@withContext CategorySyncPayload.EMPTY
+            val json = drive.files().get(fileId)
+                .executeMediaAsInputStream().bufferedReader().readText()
+
+            if (json.trimStart().startsWith("[")) {
+                // Backward-compatible: old format was a plain array
+                val array = JSONArray(json)
+                val categories = (0 until array.length()).map { i ->
+                    array.getJSONObject(i).toCategory()
+                }
+                CategorySyncPayload(categories, emptySet())
+            } else {
+                val obj = JSONObject(json)
+                val array = obj.getJSONArray("categories")
+                val categories = (0 until array.length()).map { i ->
+                    array.getJSONObject(i).toCategory()
+                }
+                val deletedArray = obj.optJSONArray("deletedIds") ?: JSONArray()
+                val deletedIds = (0 until deletedArray.length())
+                    .map { deletedArray.getString(it) }.toSet()
+                CategorySyncPayload(categories, deletedIds)
+            }
+        }.getOrElse { CategorySyncPayload.EMPTY }
+    }
+
+    data class CategorySyncPayload(
+        val categories: List<Category>,
+        val deletedIds: Set<String>
+    ) {
+        companion object {
+            val EMPTY = CategorySyncPayload(emptyList(), emptySet())
+        }
+    }
+
     /** Deletes a note file from Drive after its tombstone has been synced to all devices. */
     suspend fun deleteNote(noteId: String) = withContext(Dispatchers.IO) {
         val drive = drive() ?: return@withContext
@@ -113,6 +199,14 @@ class DriveDataSource(private val authManager: DriveAuthManager) {
                 ?.let { drive.files().delete(it).execute() }
         }
     }
+
+    private fun JSONObject.toCategory() = Category(
+        id = getString("id"),
+        name = getString("name"),
+        colorArgb = getInt("colorArgb"),
+        parentId = optString("parentId").takeIf { it.isNotEmpty() && it != "null" },
+        order = getInt("order")
+    )
 
     private fun findFileId(drive: Drive, filename: String): String? =
         drive.files().list()

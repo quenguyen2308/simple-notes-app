@@ -8,6 +8,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Label
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -34,6 +36,7 @@ fun NoteActionsBottomSheet(
     onDismiss: () -> Unit,
     onPin: () -> Unit,
     onDelete: () -> Unit,
+    onLock: () -> Unit = {},
     onMoveToFolder: () -> Unit = {},
     onAddLabel: () -> Unit = {},
     onChangeColor: () -> Unit = {}
@@ -92,6 +95,19 @@ fun NoteActionsBottomSheet(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 },
                 modifier = Modifier.fillMaxWidth().clickable { onPin(); onDismiss() }
+            )
+
+            // Lock / Unlock
+            ListItem(
+                headlineContent = { Text(if (note.isLocked) "Unlock" else "Lock") },
+                leadingContent = {
+                    Icon(
+                        if (note.isLocked) Icons.Default.LockOpen else Icons.Default.Lock,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                modifier = Modifier.fillMaxWidth().clickable { onLock(); onDismiss() }
             )
 
             HorizontalDivider()

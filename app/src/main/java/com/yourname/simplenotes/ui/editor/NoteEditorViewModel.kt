@@ -74,12 +74,15 @@ class NoteEditorViewModel(
     private var noteId: String? = null
     private var createdAt: Long = 0L
     private var existingContentBlocks: List<ContentBlock> = emptyList()
+    private var isNewNote = false
 
     /** Load an existing note by id, or prepare a blank note for "new". */
-    fun load(id: String?) {
+    fun load(id: String?, initialCategoryId: String? = null) {
         if (id == null || id == "new") {
             noteId = UUID.randomUUID().toString()
             createdAt = System.currentTimeMillis()
+            isNewNote = true
+            selectedCategoryId = initialCategoryId
             return
         }
         viewModelScope.launch {
@@ -184,6 +187,16 @@ class NoteEditorViewModel(
     /** Persists the current note to Room (triggers immediate Drive sync via repository). */
     fun save() {
         val id = noteId ?: return
+
+        // Skip saving a brand-new note that has no meaningful content
+        if (isNewNote) {
+            val hasContent = if (isChecklistMode)
+                checklistItems.any { it.text.isNotBlank() }
+            else
+                richTextState.annotatedString.text.isNotBlank()
+            if (title.isBlank() && !hasContent && imageBlocks.isEmpty()) return
+        }
+
         viewModelScope.launch {
             val html = richTextState.toHtml()
             val plainText = richTextState.annotatedString.text

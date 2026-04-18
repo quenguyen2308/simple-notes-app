@@ -48,6 +48,7 @@ fun FolderScreen(
     var createParentId by remember { mutableStateOf<String?>(null) }
     var contextFolderId by remember { mutableStateOf<String?>(null) }
     var renameTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var deleteConfirmId by remember { mutableStateOf<String?>(null) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         FolderBrowser(
@@ -94,7 +95,7 @@ fun FolderScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("Add Subfolder") }
                     TextButton(
-                        onClick = { viewModel.deleteFolder(folderId); contextFolderId = null },
+                        onClick = { deleteConfirmId = folderId; contextFolderId = null },
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
                     ) { Text("Delete") }
@@ -102,6 +103,22 @@ fun FolderScreen(
             },
             confirmButton = {},
             dismissButton = { TextButton(onClick = { contextFolderId = null }) { Text("Cancel") } }
+        )
+    }
+
+    deleteConfirmId?.let { folderId ->
+        val folder = flattenHierarchy(folders).find { it.id == folderId }
+        AlertDialog(
+            onDismissRequest = { deleteConfirmId = null },
+            title = { Text("Xóa thư mục") },
+            text = { Text("Bạn có chắc muốn xóa \"${folder?.name ?: "thư mục"}\" không? Các ghi chú bên trong sẽ không bị xóa.") },
+            confirmButton = {
+                TextButton(
+                    onClick = { viewModel.deleteFolder(folderId); deleteConfirmId = null },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) { Text("Xóa") }
+            },
+            dismissButton = { TextButton(onClick = { deleteConfirmId = null }) { Text("Hủy") } }
         )
     }
 

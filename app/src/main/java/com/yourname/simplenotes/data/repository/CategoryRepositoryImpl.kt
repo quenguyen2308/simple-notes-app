@@ -2,11 +2,17 @@ package com.yourname.simplenotes.data.repository
 
 import com.yourname.simplenotes.data.local.CategoryDao
 import com.yourname.simplenotes.data.local.CategoryEntity
+import com.yourname.simplenotes.data.local.CategorySyncPrefs
 import com.yourname.simplenotes.domain.model.Category
+import com.yourname.simplenotes.sync.SyncScheduler
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-class CategoryRepositoryImpl(private val dao: CategoryDao) : CategoryRepository {
+class CategoryRepositoryImpl(
+    private val dao: CategoryDao,
+    private val syncScheduler: SyncScheduler,
+    private val syncPrefs: CategorySyncPrefs
+) : CategoryRepository {
 
     override fun observeAll(): Flow<List<Category>> =
         dao.observeAll().map { list -> list.map { it.toDomain() } }
@@ -23,20 +29,23 @@ class CategoryRepositoryImpl(private val dao: CategoryDao) : CategoryRepository 
                 .map { it.toDomain() }
         }
 
+    override suspend fun getAll(): List<Category> = dao.getAll().map { it.toDomain() }
+
+    override suspend fun upsertAll(categories: List<Category>) =
+        dao.upsertAll(categories.map { it.toEntity() })
+
     override suspend fun getById(id: String): Category? = dao.getById(id)?.toDomain()
 
-    override suspend fun save(category: Category) =
-        dao.upsert(
-            CategoryEntity(
-                id = category.id,
-                name = category.name,
-                colorArgb = category.colorArgb,
-                parentId = category.parentId,
-                order = category.order
-            )
-        )
+    override suspend fun save(category: Category) {
+        dao.upsert(category.toEntity())
+        syncScheduler.triggerImmediateSync()  // Bug 5 fix
+    }
 
-    override suspend fun delete(id: String) = dao.delete(id)
+    override suspend fun delete(id: String) {
+        dao.delete(id)
+        syncPrefs.addDeletedId(id)            // Bug 4 fix: track for Drive propagation
+        syncScheduler.triggerImmediateSync()  // Bug 5 fix
+    }
 
     override suspend fun moveFolder(folderId: String, newParentId: String?) =
         dao.updateParent(folderId, newParentId)
@@ -44,7 +53,24 @@ class CategoryRepositoryImpl(private val dao: CategoryDao) : CategoryRepository 
     override suspend fun reorderFolders(parentId: String?, folderIds: List<String>) {
         folderIds.forEachIndexed { index, id -> dao.updateOrder(id, index) }
     }
+
+    override suspend fun getPendingDeletedIds(): Set<String> = syncPrefs.pendingDeletedIds
+
+    override suspend fun clearPendingDeletedIds() = syncPrefs.clear()
+
+    override suspend fun applyRemoteDeletions(ids: Set<String>) {
+        ids.forEach { dao.delete(it) }
+        // Do NOT add to syncPrefs — these deletions came from Drive, not local user action
+    }
 }
+
+private fun Category.toEntity() = CategoryEntity(
+    id = id,
+    name = name,
+    colorArgb = colorArgb,
+    parentId = parentId,
+    order = order
+)
 
 /** Builds a nested folder tree from a flat list, sorted by order within each level. */
 private fun buildTree(flat: List<Category>, parentId: String?): List<Category> =

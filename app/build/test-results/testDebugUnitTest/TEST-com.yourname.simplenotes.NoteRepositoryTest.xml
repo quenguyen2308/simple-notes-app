@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.yourname.simplenotes.NoteRepositoryTest" tests="2" skipped="0" failures="0" errors="0" timestamp="2026-04-16T09:13:31.348Z" hostname="AMPC003" time="0.313">
-  <properties/>
-  <testcase name="save_upserts_to_dao_and_triggers_sync" classname="com.yourname.simplenotes.NoteRepositoryTest" time="0.304"/>
-  <testcase name="delete_soft_deletes_and_triggers_sync" classname="com.yourname.simplenotes.NoteRepositoryTest" time="0.009"/>
-  <system-out><![CDATA[]]></system-out>
-  <system-err><![CDATA[]]></system-err>
-</testsuite>

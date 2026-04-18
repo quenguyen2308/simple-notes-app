@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.yourname.simplenotes.SyncConflictTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-04-16T09:13:34.527Z" hostname="AMPC003" time="0.005">
-  <properties/>
-  <testcase name="driveWins_when_drive_is_newer" classname="com.yourname.simplenotes.SyncConflictTest" time="0.0"/>
-  <testcase name="note_toJson_fromJson_roundtrip" classname="com.yourname.simplenotes.SyncConflictTest" time="0.005"/>
-  <testcase name="localWins_when_local_is_newer_and_dirty" classname="com.yourname.simplenotes.SyncConflictTest" time="0.0"/>
-  <system-out><![CDATA[]]></system-out>
-  <system-err><![CDATA[]]></system-err>
-</testsuite>

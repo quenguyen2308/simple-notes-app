@@ -59,56 +59,54 @@ class DriveDataSource(private val authManager: DriveAuthManager) {
      */
     suspend fun downloadNotes(noteIds: Set<String>): List<Note> = withContext(Dispatchers.IO) {
         val drive = drive() ?: return@withContext emptyList()
-        runCatching {
-            val files = drive.files().list()
-                .setSpaces("appDataFolder")
-                .setQ("name contains 'note_' and mimeType = 'application/json'")
-                .setFields("files(id, name)")
-                .execute()
-                .files ?: emptyList()
+        // List call is not wrapped — network errors propagate so doWork() retries
+        val files = drive.files().list()
+            .setSpaces("appDataFolder")
+            .setQ("name contains 'note_' and mimeType = 'application/json'")
+            .setFields("files(id, name)")
+            .execute()
+            .files ?: emptyList()
 
-            files
-                .filter { file ->
-                    val noteId = file.name.removePrefix("note_").removeSuffix(".json")
-                    noteId in noteIds
-                }
-                .mapNotNull { file ->
-                    runCatching {
-                        val stream = drive.files().get(file.id).executeMediaAsInputStream()
-                        Note.fromJson(stream.bufferedReader().readText())
-                    }.getOrNull()
-                }
-        }.getOrElse { emptyList() }
+        files
+            .filter { file ->
+                val noteId = file.name.removePrefix("note_").removeSuffix(".json")
+                noteId in noteIds
+            }
+            .mapNotNull { file ->
+                // Individual note parse failures are safe to skip
+                runCatching {
+                    val stream = drive.files().get(file.id).executeMediaAsInputStream()
+                    Note.fromJson(stream.bufferedReader().readText())
+                }.getOrNull()
+            }
     }
 
     /** Fetches index.json — returns map of noteId → Drive modifiedTime string. */
     suspend fun fetchIndex(): Map<String, String> = withContext(Dispatchers.IO) {
         val drive = drive() ?: return@withContext emptyMap()
-        runCatching {
-            val fileId = findFileId(drive, "index.json") ?: return@withContext emptyMap()
-            val json = drive.files().get(fileId)
-                .executeMediaAsInputStream()
-                .bufferedReader().readText()
-            JSONObject(json).let { obj ->
-                obj.keys().asSequence().associateWith { obj.getString(it) }
-            }
-        }.getOrElse { emptyMap() }
+        // No try/catch: let network errors propagate so doWork() retries on failure
+        val fileId = findFileId(drive, "index.json") ?: return@withContext emptyMap()
+        val json = drive.files().get(fileId)
+            .executeMediaAsInputStream()
+            .bufferedReader().readText()
+        JSONObject(json).let { obj ->
+            obj.keys().asSequence().associateWith { obj.getString(it) }
+        }
     }
 
     /** Uploads index.json with the latest noteId → modifiedTime map. */
     suspend fun uploadIndex(index: Map<String, String>) = withContext(Dispatchers.IO) {
         val drive = drive() ?: return@withContext
-        runCatching {
-            val json = JSONObject(index as Map<*, *>).toString()
-            val content = ByteArrayContent("application/json", json.toByteArray())
-            val metadata = com.google.api.services.drive.model.File().setName("index.json")
-            val existingId = findFileId(drive, "index.json")
-            if (existingId != null) {
-                drive.files().update(existingId, metadata, content).execute()
-            } else {
-                metadata.setParents(listOf("appDataFolder"))
-                drive.files().create(metadata, content).execute()
-            }
+        // No try-catch: errors propagate so doWork() retries the whole sync
+        val json = JSONObject(index as Map<*, *>).toString()
+        val content = ByteArrayContent("application/json", json.toByteArray())
+        val metadata = com.google.api.services.drive.model.File().setName("index.json")
+        val existingId = findFileId(drive, "index.json")
+        if (existingId != null) {
+            drive.files().update(existingId, metadata, content).execute()
+        } else {
+            metadata.setParents(listOf("appDataFolder"))
+            drive.files().create(metadata, content).execute()
         }
     }
 
@@ -152,34 +150,33 @@ class DriveDataSource(private val authManager: DriveAuthManager) {
     /**
      * Downloads categories.json from Drive.
      * Handles both old format (plain JSONArray) and new format (JSONObject with deletedIds).
+     * No try/catch: network errors propagate so doWork() retries on failure.
      */
     suspend fun downloadCategories(): CategorySyncPayload = withContext(Dispatchers.IO) {
         val drive = drive() ?: return@withContext CategorySyncPayload.EMPTY
-        runCatching {
-            val fileId = findFileId(drive, "categories.json")
-                ?: return@withContext CategorySyncPayload.EMPTY
-            val json = drive.files().get(fileId)
-                .executeMediaAsInputStream().bufferedReader().readText()
+        val fileId = findFileId(drive, "categories.json")
+            ?: return@withContext CategorySyncPayload.EMPTY
+        val json = drive.files().get(fileId)
+            .executeMediaAsInputStream().bufferedReader().readText()
 
-            if (json.trimStart().startsWith("[")) {
-                // Backward-compatible: old format was a plain array
-                val array = JSONArray(json)
-                val categories = (0 until array.length()).map { i ->
-                    array.getJSONObject(i).toCategory()
-                }
-                CategorySyncPayload(categories, emptySet())
-            } else {
-                val obj = JSONObject(json)
-                val array = obj.getJSONArray("categories")
-                val categories = (0 until array.length()).map { i ->
-                    array.getJSONObject(i).toCategory()
-                }
-                val deletedArray = obj.optJSONArray("deletedIds") ?: JSONArray()
-                val deletedIds = (0 until deletedArray.length())
-                    .map { deletedArray.getString(it) }.toSet()
-                CategorySyncPayload(categories, deletedIds)
+        if (json.trimStart().startsWith("[")) {
+            // Backward-compatible: old format was a plain array
+            val array = JSONArray(json)
+            val categories = (0 until array.length()).map { i ->
+                array.getJSONObject(i).toCategory()
             }
-        }.getOrElse { CategorySyncPayload.EMPTY }
+            CategorySyncPayload(categories, emptySet())
+        } else {
+            val obj = JSONObject(json)
+            val array = obj.getJSONArray("categories")
+            val categories = (0 until array.length()).map { i ->
+                array.getJSONObject(i).toCategory()
+            }
+            val deletedArray = obj.optJSONArray("deletedIds") ?: JSONArray()
+            val deletedIds = (0 until deletedArray.length())
+                .map { deletedArray.getString(it) }.toSet()
+            CategorySyncPayload(categories, deletedIds)
+        }
     }
 
     data class CategorySyncPayload(

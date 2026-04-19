@@ -16,7 +16,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -33,7 +32,11 @@ class NoteListViewModel(
     val isSyncing: StateFlow<Boolean> =
         WorkManager.getInstance(context)
             .getWorkInfosForUniqueWorkFlow(SyncWorker.WORK_NAME_IMMEDIATE)
-            .map { infos -> infos.any { it.state == WorkInfo.State.RUNNING } }
+            .map { infos ->
+                infos.any {
+                    it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED
+                }
+            }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     /** Currently selected category filter (null = show all). */
@@ -103,11 +106,11 @@ class NoteListViewModel(
 
     init {
         syncScheduler.triggerImmediateSync()
-        viewModelScope.launch {
-            categories.first { it.isNotEmpty() }.also { cats ->
-                selectedCategoryId.value = cats.first().id
-            }
-        }
+    }
+
+    /** Call from the UI when the screen resumes (app comes to foreground). */
+    fun onResume() {
+        syncScheduler.triggerImmediateSync()
     }
 
     fun deleteNote(id: String) {
@@ -126,9 +129,10 @@ class NoteListViewModel(
     /** Move multiple notes to a target folder. */
     fun moveNotes(ids: List<String>, folderId: String) {
         viewModelScope.launch {
+            val now = System.currentTimeMillis()
             ids.forEach { id ->
                 val note = repository.getById(id) ?: return@forEach
-                repository.save(note.copy(folderId = folderId, isDirty = true))
+                repository.save(note.copy(folderId = folderId, isDirty = true, updatedAt = now))
             }
         }
     }
@@ -136,9 +140,10 @@ class NoteListViewModel(
     /** Lock or unlock multiple notes by IDs. */
     fun lockNotes(ids: List<String>, locked: Boolean) {
         viewModelScope.launch {
+            val now = System.currentTimeMillis()
             ids.forEach { id ->
                 val note = repository.getById(id) ?: return@forEach
-                repository.save(note.copy(isLocked = locked, isDirty = true))
+                repository.save(note.copy(isLocked = locked, isDirty = true, updatedAt = now))
             }
         }
     }
@@ -147,7 +152,7 @@ class NoteListViewModel(
     fun togglePin(noteId: String) {
         viewModelScope.launch {
             val note = repository.getById(noteId) ?: return@launch
-            repository.save(note.copy(isPinned = !note.isPinned, isDirty = true))
+            repository.save(note.copy(isPinned = !note.isPinned, isDirty = true, updatedAt = System.currentTimeMillis()))
         }
     }
 

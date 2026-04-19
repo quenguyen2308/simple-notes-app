@@ -6,9 +6,7 @@ import androidx.work.WorkerParameters
 import com.yourname.simplenotes.data.remote.DriveDataSource
 import com.yourname.simplenotes.data.repository.CategoryRepository
 import com.yourname.simplenotes.data.repository.NoteRepository
-import java.text.SimpleDateFormat
-import java.util.Locale
-import java.util.TimeZone
+import java.time.Instant
 
 /**
  * Two-direction sync worker:
@@ -104,16 +102,10 @@ class SyncWorker(
     }
 
     private fun parseIso(isoString: String): Long =
-        runCatching {
-            ISO_FORMAT.parse(isoString)?.time ?: 0L
-        }.getOrDefault(0L)
+        runCatching { Instant.parse(isoString).toEpochMilli() }.getOrDefault(0L)
 
     companion object {
         const val WORK_NAME_PERIODIC = "sync_periodic"
         const val WORK_NAME_IMMEDIATE = "sync_immediate"
-
-        private val ISO_FORMAT = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
-            timeZone = TimeZone.getTimeZone("UTC")
-        }
     }
 }

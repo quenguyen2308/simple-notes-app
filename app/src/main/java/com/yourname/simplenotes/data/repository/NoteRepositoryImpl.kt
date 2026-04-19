@@ -54,6 +54,23 @@ class NoteRepositoryImpl(
     override suspend fun markClean(id: String) =
         dao.markClean(id)
 
-    override suspend fun upsertFromRemote(notes: List<Note>) =
-        dao.upsertAll(notes.map { it.toEntity().copy(isDirty = false) })
+    override suspend fun upsertFromRemote(notes: List<Note>) {
+        val entities = notes.map { it.toEntity().copy(isDirty = false) }
+        dao.upsertAll(entities)
+        notes.forEach { note ->
+            if (note.isDeleted) {
+                noteSearchDao.deleteByNoteId(note.id)
+            } else {
+                noteSearchDao.upsertIndex(
+                    NoteSearchEntity(
+                        noteId = note.id,
+                        title = note.title,
+                        content = note.contentBlocks
+                            .filterIsInstance<ContentBlock.Text>()
+                            .joinToString(" ") { it.text }
+                    )
+                )
+            }
+        }
+    }
 }

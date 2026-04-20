@@ -40,4 +40,20 @@ interface NoteDao {
     /** Called by SyncWorker after a note is successfully uploaded to Drive. */
     @Query("UPDATE notes SET isDirty = 0 WHERE id = :id")
     suspend fun markClean(id: String)
+
+    /** Observe soft-deleted notes for Recycle Bin. */
+    @Query("SELECT * FROM notes WHERE isDeleted = 1 ORDER BY updatedAt DESC")
+    fun observeDeleted(): Flow<List<NoteEntity>>
+
+    /** Permanently removes a note row from the database. */
+    @Query("DELETE FROM notes WHERE id = :id")
+    suspend fun permanentDeleteById(id: String)
+
+    /** Returns IDs of soft-deleted notes older than [cutoffMs] (for FTS cleanup before bulk delete). */
+    @Query("SELECT id FROM notes WHERE isDeleted = 1 AND updatedAt < :cutoffMs")
+    suspend fun getDeletedNoteIdsOlderThan(cutoffMs: Long): List<String>
+
+    /** Bulk-removes soft-deleted notes whose deletion timestamp is older than [cutoffMs]. */
+    @Query("DELETE FROM notes WHERE isDeleted = 1 AND updatedAt < :cutoffMs")
+    suspend fun purgeOldDeletedNotes(cutoffMs: Long)
 }

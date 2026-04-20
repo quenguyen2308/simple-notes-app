@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -126,8 +127,8 @@ class NoteListViewModel(
         viewModelScope.launch { ids.forEach { repository.delete(it) } }
     }
 
-    /** Move multiple notes to a target folder. */
-    fun moveNotes(ids: List<String>, folderId: String) {
+    /** Move multiple notes to a target folder (null = remove from folder). */
+    fun moveNotes(ids: List<String>, folderId: String?) {
         viewModelScope.launch {
             val now = System.currentTimeMillis()
             ids.forEach { id ->
@@ -179,6 +180,38 @@ class NoteListViewModel(
     fun reorderCategories(categoryIds: List<String>) {
         viewModelScope.launch {
             categoryRepository.reorderFolders(null, categoryIds)
+        }
+    }
+
+    /** Moves all notes in [id] to root (folderId=null) then deletes the folder. */
+    fun deleteFolder(id: String) {
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            repository.observeAll().first()
+                .filter { it.folderId == id }
+                .forEach { note ->
+                    repository.save(note.copy(folderId = null, isDirty = true, updatedAt = now))
+                }
+            categoryRepository.delete(id)
+            if (selectedCategoryId.value == id) selectedCategoryId.value = null
+        }
+    }
+
+    /** Soft-deleted notes shown in Recycle Bin. */
+    val deletedNotes: StateFlow<List<Note>> = repository.observeDeleted()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun restore(id: String) {
+        viewModelScope.launch { repository.restore(id) }
+    }
+
+    fun permanentDelete(id: String) {
+        viewModelScope.launch { repository.permanentDelete(id) }
+    }
+
+    fun clearRecycleBin() {
+        viewModelScope.launch {
+            deletedNotes.value.forEach { repository.permanentDelete(it.id) }
         }
     }
 }

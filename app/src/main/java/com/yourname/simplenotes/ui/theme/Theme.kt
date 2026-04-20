@@ -17,9 +17,11 @@ private val DarkColorScheme = darkColorScheme(
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = SamsungBlue,
+    primary   = SamsungBlue,
     secondary = SamsungBlueDark,
-    tertiary = SamsungBlueLight
+    tertiary  = SamsungBlueLight,
+    background = androidx.compose.ui.graphics.Color.White,
+    surface    = androidx.compose.ui.graphics.Color.White
 )
 
 @Composable
@@ -27,15 +29,7 @@ fun SimpleNotesTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    val colorScheme = when {
-        // Dynamic color available on Android 12+ (SDK 31)
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
-    }
+    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
 
     MaterialTheme(colorScheme = colorScheme, content = content)
 }

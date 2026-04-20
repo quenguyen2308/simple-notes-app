@@ -55,6 +55,99 @@ If the build fails with `classes.dex: The process cannot access the file`, delet
 
 **NoteListScreen layout**: Header (title + search) → `DraggableCategoryChips` (horizontal scrollable, long-press drag-to-reorder) → tab bar (Tất cả / Đã ghim / Thư mục) → note list. The ViewModel auto-selects the first category on first load.
 
+## Key Files Map
+
+Quick reference for finding code by feature:
+
+| Feature | Files |
+|---------|-------|
+| App entry | `MainActivity.kt`, `NotesApp.kt` |
+| DI bindings | `di/AppModule.kt`, `di/SyncWorkerFactory.kt` |
+| Domain models | `domain/model/Note.kt`, `Category.kt`, `NoteMetadata.kt`, `SearchResult.kt` |
+| Content blocks | `data/local/entities/ContentBlock.kt`, `ChecklistItem.kt` |
+| Note JSON ↔ Drive | `domain/model/NoteJsonExtensions.kt` |
+| Room DB | `data/local/NoteDatabase.kt` |
+| Room entities | `NoteEntity.kt`, `CategoryEntity.kt`, `NoteSearchEntity.kt`, `SearchHistoryEntity.kt` |
+| DAOs | `NoteDao.kt`, `CategoryDao.kt`, `NoteSearchDao.kt`, `SearchHistoryDao.kt` |
+| Entity↔Domain mapping | `data/local/NoteMapper.kt` |
+| DB migrations | `data/local/Migration3To4.kt`, `Migration4To5.kt`, `Migration5To6.kt` |
+| Drive I/O | `data/remote/DriveDataSource.kt` |
+| Google Sign-In | `data/remote/DriveAuthManager.kt` |
+| Repositories | `data/repository/NoteRepositoryImpl.kt`, `CategoryRepositoryImpl.kt`, `SearchRepositoryImpl.kt` |
+| Sync worker | `sync/SyncWorker.kt`, `sync/SyncScheduler.kt` |
+| Biometric/PIN | `data/auth/BiometricAuthManager.kt`, `PinAuthManager.kt`, `AuthPreferencesManager.kt` |
+| Navigation | `ui/AppNavigation.kt`, `ui/auth/AuthNavigation.kt` |
+| Theme | `ui/theme/Theme.kt`, `ui/theme/Color.kt` |
+| Note list | `ui/notes/NoteListScreen.kt`, `NoteListViewModel.kt`, `NoteCard.kt` |
+| Note editor | `ui/editor/NoteEditorScreen.kt`, `NoteEditorViewModel.kt`, `RichTextEditor.kt` |
+| Search | `ui/search/SearchScreen.kt`, `SearchViewModel.kt` |
+| Folders | `ui/folder/FolderScreen.kt`, `FolderViewModel.kt`, `FolderBrowser.kt` |
+| Auth screens | `ui/auth/AuthScreen.kt`, `AuthViewModel.kt`, `SignInScreen.kt`, `PinEntryScreen.kt` |
+| Settings | `ui/settings/SettingsScreen.kt`, `SettingsPrefs.kt` |
+
+## Navigation Routes
+
+```kotlin
+// Main routes (AppNavigation.kt)
+"list"                              // NoteListScreen
+"editor/{noteId}?categoryId={x}"   // NoteEditorScreen; noteId = "new" for new notes
+"search"                            // SearchScreen
+
+// Auth routes (AuthNavigation.kt)
+"auth"                              // AuthScreen (biometric prompt)
+"pin_entry"                         // PinEntryScreen (fallback)
+```
+
+Flow: `MainActivity` → if signed out → `SignInScreen`; if `requiresAuth` → `auth` route → on success → `list`.
+
+## NoteEntity Schema (Room v6)
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | String (PK) | UUID |
+| `title` | String | |
+| `contentBlocksJson` | String | Gson-serialized `List<ContentBlock>` |
+| `folderId` | String? | FK to CategoryEntity.id |
+| `backgroundColor` | Int | ARGB color |
+| `isPinned` | Boolean | |
+| `labelsJson` | String | Gson-serialized `List<String>` |
+| `metadataJson` | String | Gson-serialized `NoteMetadata` |
+| `createdAt` | Long | epochMs |
+| `updatedAt` | Long | epochMs |
+| `isDirty` | Boolean | true = pending Drive upload |
+| `isDeleted` | Boolean | soft delete flag |
+| `isLocked` | Boolean | per-note lock |
+| `pinHash` | String? | bcrypt hash (cost 12) |
+
+When adding a new column: add to entity, create `Migration(N)To(N+1).kt`, register in `NoteDatabase.create()`, bump version.
+
+## Koin DI Bindings (AppModule.kt)
+
+**Singletons**: `NoteDatabase`, all 4 DAOs, `DriveAuthManager`, `DriveDataSource`, `SyncScheduler`, `SyncWorkerFactory`, `CategorySyncPrefs`
+
+**Repositories (singletons)**: `NoteRepositoryImpl` as `NoteRepository`, `CategoryRepositoryImpl` as `CategoryRepository`, `SearchRepositoryImpl` as `SearchRepository`
+
+**ViewModels**: `NoteListViewModel`, `NoteEditorViewModel`, `FolderViewModel`, `SearchViewModel`
+
+Auth singletons are created in `MainActivity` (not Koin): `DriveAuthManager`, `BiometricAuthManager`, `PinAuthManager`, `AuthPreferencesManager`.
+
+## Key Dependencies & Versions
+
+| Library | Version | Purpose |
+|---------|---------|---------|
+| Compose BOM | (managed) | UI framework |
+| Room | KSP | Local DB |
+| WorkManager | | Background sync |
+| Koin Android + Compose + WorkManager | | DI |
+| biometric | 1.1.0 | Fingerprint |
+| biometric-ktx | 1.2.0-alpha05 | Kotlin API |
+| security-crypto | 1.1.0-alpha06 | Encrypted SharedPrefs |
+| bcrypt | 0.10.2 (favre) | PIN hashing |
+| richeditor-compose | 1.0.0-rc05 (mohamedrejeb) | Rich text editor |
+| coil-compose | 2.5.0 | Image loading |
+| gson | 2.10.1 | JSON serialization |
+| play-services-auth + google-api-services-drive | | Google Drive |
+
 ## Key Constraints
 
 - `minSdk = 28`, `targetSdk = 34`, Kotlin 1.9.21, Compose compiler 1.5.6.

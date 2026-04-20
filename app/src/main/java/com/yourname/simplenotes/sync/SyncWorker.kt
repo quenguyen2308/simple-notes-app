@@ -1,6 +1,7 @@
 package com.yourname.simplenotes.sync
 
 import android.content.Context
+import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.yourname.simplenotes.data.remote.DriveDataSource
@@ -27,46 +28,60 @@ class SyncWorker(
 
     override suspend fun doWork(): Result =
         runCatching { sync() }
-            .fold(onSuccess = { Result.success() }, onFailure = { Result.retry() })
+            .fold(
+                onSuccess = { Log.i(TAG, "Sync completed successfully"); Result.success() },
+                onFailure = { e -> Log.e(TAG, "Sync failed, will retry: ${e.message}", e); Result.retry() }
+            )
 
     private suspend fun sync() {
+        Log.i(TAG, "Starting sync…")
+
         // Step 1: fetch Drive index {noteId → modifiedTimeIso}
         val driveIndex = driveDataSource.fetchIndex()
+        Log.i(TAG, "Drive index has ${driveIndex.size} entries")
 
         // Collect dirty local notes upfront
         val dirtyNotes = repository.getDirtyNotes()
+        Log.i(TAG, "Dirty local notes: ${dirtyNotes.size}")
 
         // Step 2: determine which Drive notes are newer than local copies.
-        // Use getByIdIncludeDeleted so locally-deleted notes are compared by timestamp,
-        // not silently treated as "missing" (which would incorrectly un-delete them).
         val notesToDownload = driveIndex.keys.filter { noteId ->
             val driveTime = parseIso(driveIndex[noteId] ?: return@filter false)
             val local = repository.getByIdIncludeDeleted(noteId)
-            local == null || driveTime > local.updatedAt
+            // Local deletion wins: never re-download a note we've already deleted locally
+            if (local?.isDeleted == true) return@filter false
+            (local == null || driveTime > local.updatedAt).also { needsDownload ->
+                if (needsDownload) Log.d(TAG, "Will download $noteId (driveTime=$driveTime local=${local?.updatedAt})")
+            }
         }
+        Log.i(TAG, "Notes to download: ${notesToDownload.size}")
 
-        // Bug 3 fix: download only the specific notes needed, not all notes.
         if (notesToDownload.isNotEmpty()) {
             val remoteNotes = driveDataSource.downloadNotes(notesToDownload.toSet())
+            Log.i(TAG, "Downloaded ${remoteNotes.size} notes from Drive")
             repository.upsertFromRemote(remoteNotes)
         }
 
         // Step 3: upload dirty local notes (skip those where Drive won the conflict)
         val newIndex = driveIndex.toMutableMap()
         for (note in dirtyNotes) {
-            if (note.id in notesToDownload) continue  // Drive won — skip upload
-            val modifiedTime = driveDataSource.uploadNote(note) ?: continue
+            if (note.id in notesToDownload) { Log.d(TAG, "Skipping upload of ${note.id} — Drive won"); continue }
+            val modifiedTime = driveDataSource.uploadNote(note)
+            if (modifiedTime == null) { Log.w(TAG, "Upload failed for ${note.id}"); continue }
             repository.markClean(note.id)
-            // Bug 1 fix: keep tombstones in index so Device B can download and apply the deletion.
             newIndex[note.id] = modifiedTime
+            Log.d(TAG, "Uploaded note ${note.id}")
         }
 
         // Step 4: push updated index
         driveDataSource.uploadIndex(newIndex)
+        Log.i(TAG, "Index uploaded with ${newIndex.size} entries")
 
-        // Step 5: sync categories — Drive is source of truth when remote exists,
-        // otherwise push local categories up
         syncCategories()
+
+        // Permanently remove notes that have been in the recycle bin for more than 30 days
+        val cutoff = System.currentTimeMillis() - 30L * 24 * 60 * 60 * 1000
+        repository.purgeOldDeleted(cutoff)
     }
 
     private suspend fun syncCategories() {
@@ -107,5 +122,6 @@ class SyncWorker(
     companion object {
         const val WORK_NAME_PERIODIC = "sync_periodic"
         const val WORK_NAME_IMMEDIATE = "sync_immediate"
+        private const val TAG = "SyncWorker"
     }
 }

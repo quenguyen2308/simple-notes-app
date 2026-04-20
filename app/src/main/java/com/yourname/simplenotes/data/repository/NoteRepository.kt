@@ -13,4 +13,9 @@ interface NoteRepository {
     suspend fun markClean(id: String)
     /** Called by SyncWorker to merge notes downloaded from Drive (never marks them dirty). */
     suspend fun upsertFromRemote(notes: List<Note>)
+
+    fun observeDeleted(): Flow<List<Note>>
+    suspend fun restore(id: String)
+    suspend fun permanentDelete(id: String)
+    suspend fun purgeOldDeleted(cutoffMs: Long)
 }

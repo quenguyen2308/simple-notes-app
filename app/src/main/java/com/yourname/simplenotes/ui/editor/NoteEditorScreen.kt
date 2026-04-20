@@ -294,6 +294,7 @@ fun NoteEditorScreen(
                         containerColor = Color.Transparent,
                         focusedIndicatorColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent,
+                        cursorColor = SamsungBlue,
                     )
                 )
             }

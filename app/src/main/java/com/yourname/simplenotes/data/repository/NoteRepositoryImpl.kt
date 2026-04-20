@@ -54,6 +54,37 @@ class NoteRepositoryImpl(
     override suspend fun markClean(id: String) =
         dao.markClean(id)
 
+    override fun observeDeleted(): Flow<List<Note>> =
+        dao.observeDeleted().map { list -> list.map { it.toDomain() } }
+
+    override suspend fun restore(id: String) {
+        val note = dao.getByIdIncludeDeleted(id)?.toDomain() ?: return
+        val now = System.currentTimeMillis()
+        val restored = note.copy(isDeleted = false, isDirty = true, updatedAt = now)
+        dao.upsert(restored.toEntity())
+        noteSearchDao.upsertIndex(
+            NoteSearchEntity(
+                noteId = restored.id,
+                title = restored.title,
+                content = restored.contentBlocks
+                    .filterIsInstance<ContentBlock.Text>()
+                    .joinToString(" ") { it.text }
+            )
+        )
+        syncScheduler.triggerImmediateSync()
+    }
+
+    override suspend fun permanentDelete(id: String) {
+        dao.permanentDeleteById(id)
+        noteSearchDao.deleteByNoteId(id)
+    }
+
+    override suspend fun purgeOldDeleted(cutoffMs: Long) {
+        val ids = dao.getDeletedNoteIdsOlderThan(cutoffMs)
+        ids.forEach { noteSearchDao.deleteByNoteId(it) }
+        dao.purgeOldDeletedNotes(cutoffMs)
+    }
+
     override suspend fun upsertFromRemote(notes: List<Note>) {
         val entities = notes.map { it.toEntity().copy(isDirty = false) }
         dao.upsertAll(entities)

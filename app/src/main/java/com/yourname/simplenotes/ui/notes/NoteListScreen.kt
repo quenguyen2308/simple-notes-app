@@ -4,10 +4,13 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -24,10 +27,13 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
@@ -49,6 +55,17 @@ import org.koin.androidx.compose.koinViewModel
 
 private val SamsungBlue = Color(0xFF1259C3)
 
+private data class FolderNode(val category: Category, val children: List<FolderNode>)
+
+private fun buildFolderTree(categories: List<Category>): List<FolderNode> {
+    val byParent = categories.groupBy { it.parentId }
+    fun nodes(parentId: String?): List<FolderNode> =
+        (byParent[parentId] ?: emptyList())
+            .sortedBy { it.order }
+            .map { cat -> FolderNode(cat, nodes(cat.id)) }
+    return nodes(null)
+}
+
 enum class SortField(val label: String) {
     DATE_MODIFIED("Date modified"),
     DATE_CREATED("Date created"),
@@ -68,6 +85,8 @@ fun NoteListScreen(
     val categories by viewModel.categories.collectAsStateWithLifecycle()
     val categoryCounts by viewModel.categoryCounts.collectAsStateWithLifecycle()
     val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
+    val viewType by viewModel.viewType.collectAsStateWithLifecycle()
+    val deletedNotes by viewModel.deletedNotes.collectAsStateWithLifecycle()
 
     val pullRefreshState = rememberPullToRefreshState()
 
@@ -75,12 +94,11 @@ fun NoteListScreen(
     LaunchedEffect(pullRefreshState.isRefreshing) {
         if (pullRefreshState.isRefreshing) {
             viewModel.onResume()
-            // Wait for sync to start then finish, timeout 10s as safety net
-            kotlinx.coroutines.withTimeoutOrNull(10_000) {
+            // Wait for sync to start then finish, timeout 5s as safety net
+            kotlinx.coroutines.withTimeoutOrNull(5_000) {
                 viewModel.isSyncing.first { it }   // wait until running
                 viewModel.isSyncing.first { !it }  // wait until done
             }
-            kotlinx.coroutines.delay(300)
             pullRefreshState.endRefresh()
         }
     }
@@ -88,6 +106,7 @@ fun NoteListScreen(
 
     var viewingFolderId by remember { mutableStateOf<String?>(null) }
     var showSettings    by remember { mutableStateOf(false) }
+    var showRecycleBin  by remember { mutableStateOf(false) }
     var showSearchBar   by remember { mutableStateOf(false) }
     var searchQuery     by remember { mutableStateOf("") }
     var showMoreMenu    by remember { mutableStateOf(false) }
@@ -100,13 +119,16 @@ fun NoteListScreen(
     var deleteConfirmNote by remember { mutableStateOf<Note?>(null) }
     var showBulkDeleteConfirm by remember { mutableStateOf(false) }
     var showNoPasscodeDialog  by remember { mutableStateOf(false) }
+    var moveToFolderNote by remember { mutableStateOf<Note?>(null) }
+    var folderToDelete   by remember { mutableStateOf<Category?>(null) }
 
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
 
-    // Back: folder → home, settings → main
-    BackHandler(enabled = viewingFolderId != null || showSettings) {
+    // Back: folder → home, settings/recycle bin → main
+    BackHandler(enabled = viewingFolderId != null || showSettings || showRecycleBin) {
         when {
+            showRecycleBin -> showRecycleBin = false
             viewingFolderId != null -> {
                 viewingFolderId = null
                 isSelectionMode = false
@@ -196,13 +218,6 @@ fun NoteListScreen(
                     modifier = Modifier.padding(horizontal = 12.dp)
                 )
                 NavigationDrawerItem(
-                    icon   = { Icon(Icons.Default.Description, null) },
-                    label  = { Text("Old format notes") },
-                    selected = false,
-                    onClick = { scope.launch { drawerState.close() } },
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-                NavigationDrawerItem(
                     icon   = { Icon(Icons.Default.Lock, null) },
                     label  = { Text("Locked notes") },
                     badge  = { Text("$lockedNotesCount", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp) },
@@ -211,33 +226,16 @@ fun NoteListScreen(
                     modifier = Modifier.padding(horizontal = 12.dp)
                 )
                 NavigationDrawerItem(
-                    icon   = { Icon(Icons.Default.Share, null) },
-                    label  = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Shared notes")
-                            Spacer(Modifier.width(8.dp))
-                            Surface(
-                                color  = Color.DarkGray,
-                                shape  = RoundedCornerShape(4.dp)
-                            ) {
-                                Text(
-                                    "BETA",
-                                    fontSize = 9.sp,
-                                    color    = Color.White,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
-                    },
-                    selected = false,
-                    onClick  = { scope.launch { drawerState.close() } },
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-                NavigationDrawerItem(
                     icon   = { Icon(Icons.Default.Delete, null) },
                     label  = { Text("Recycle bin") },
-                    selected = false,
-                    onClick = { scope.launch { drawerState.close() } },
+                    badge  = if (deletedNotes.isNotEmpty()) {
+                        { Text("${deletedNotes.size}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp) }
+                    } else null,
+                    selected = showRecycleBin,
+                    onClick = {
+                        showRecycleBin = true
+                        scope.launch { drawerState.close() }
+                    },
                     modifier = Modifier.padding(horizontal = 12.dp)
                 )
 
@@ -273,30 +271,35 @@ fun NoteListScreen(
                     Text("$totalFolderNotes", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                 }
 
-                // Folder list
-                categories.forEach { folder ->
-                    val count = categoryCounts[folder.id] ?: 0
-                    NavigationDrawerItem(
-                        icon   = {
-                            Icon(
-                                Icons.Default.Folder, null,
-                                tint     = Color(folder.colorArgb),
-                                modifier = Modifier.size(20.dp)
-                            )
-                        },
-                        label  = { Text(folder.name) },
-                        badge  = { Text("$count", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp) },
-                        selected = viewingFolderId == folder.id,
-                        onClick  = {
-                            viewingFolderId = folder.id
+                // Hierarchical folder list
+                val folderTree = remember(categories) { buildFolderTree(categories) }
+                folderTree.forEach { node ->
+                    FolderDrawerItem(
+                        node             = node,
+                        depth            = 0,
+                        categoryCounts   = categoryCounts,
+                        selectedFolderId = viewingFolderId,
+                        onFolderClick    = { id ->
+                            viewingFolderId = id
                             scope.launch { drawerState.close() }
-                        },
-                        modifier = Modifier.padding(horizontal = 12.dp)
+                        }
                     )
                 }
             }
         }
     ) {
+        // ── Recycle Bin overlay ──────────────────────────────────────
+        if (showRecycleBin) {
+            RecycleBinScreen(
+                notes          = deletedNotes,
+                onRestore      = { viewModel.restore(it) },
+                onPermanentDelete = { viewModel.permanentDelete(it) },
+                onClearAll     = { viewModel.clearRecycleBin() },
+                onBack         = { showRecycleBin = false }
+            )
+            return@ModalNavigationDrawer
+        }
+
         // ── Settings overlay ─────────────────────────────────────────
         if (showSettings) {
             Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -424,11 +427,7 @@ fun NoteListScreen(
                         ) {
                             DropdownMenuItem(
                                 text    = { Text("Edit") },
-                                onClick = { showMoreMenu = false }
-                            )
-                            DropdownMenuItem(
-                                text    = { Text("View") },
-                                onClick = { showMoreMenu = false }
+                                onClick = { isSelectionMode = true; showMoreMenu = false }
                             )
                             DropdownMenuItem(
                                 text    = { Text("Create folder") },
@@ -490,18 +489,10 @@ fun NoteListScreen(
                     }
                 }
 
-                // ── Sort bar ────────────────────────────────────────
-                NotesSortBar(
-                    sortField     = sortField,
-                    sortAscending = sortAscending,
-                    onSortField   = { sortField = it },
-                    onToggleDir   = { sortAscending = !sortAscending }
-                )
-
                 // ── Pull-to-refresh wrapper ──────────────────────────
-                Box(Modifier.fillMaxSize().nestedScroll(pullRefreshState.nestedScrollConnection)) {
+                Box(Modifier.fillMaxSize().nestedScroll(pullRefreshState.nestedScrollConnection).clipToBounds()) {
 
-                // ── HOME: folder grid + unfiled notes ────────────────
+                // ── HOME: folder grid + sort bar + unfiled notes ──────
                 if (viewingFolderId == null) {
                     LazyColumn(
                         modifier       = Modifier.fillMaxSize(),
@@ -510,11 +501,29 @@ fun NoteListScreen(
                         if (categories.isNotEmpty()) {
                             item {
                                 FolderGrid(
-                                    categories    = categories,
+                                    categories     = categories,
                                     categoryCounts = categoryCounts,
-                                    onFolderClick  = { id -> viewingFolderId = id }
+                                    onFolderClick  = { id -> viewingFolderId = id },
+                                    onFolderLongPress = { id ->
+                                        folderToDelete = categories.find { it.id == id }
+                                    }
                                 )
                             }
+                        }
+
+                        item {
+                            NotesSortBar(
+                                sortField     = sortField,
+                                sortAscending = sortAscending,
+                                viewType      = viewType,
+                                onSortField   = { sortField = it },
+                                onToggleDir   = { sortAscending = !sortAscending },
+                                onToggleView  = {
+                                    viewModel.setViewType(
+                                        if (viewType == NoteViewType.GRID) NoteViewType.LIST else NoteViewType.GRID
+                                    )
+                                }
+                            )
                         }
 
                         if (currentNotes.isEmpty()) {
@@ -530,7 +539,7 @@ fun NoteListScreen(
                                     )
                                 }
                             }
-                        } else {
+                        } else if (viewType == NoteViewType.GRID) {
                             items(currentNotes.chunked(3)) { row ->
                                 Row(
                                     modifier             = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp),
@@ -556,11 +565,41 @@ fun NoteListScreen(
                                     repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
                                 }
                             }
+                        } else {
+                            items(currentNotes, key = { it.id }) { note ->
+                                NoteCard(
+                                    note     = note,
+                                    isSelected = selectedNotes.contains(note.id),
+                                    onClick  = {
+                                        if (isSelectionMode) toggleSelection(note.id)
+                                        else handleNoteClick(note.id)
+                                    },
+                                    onLongPress = {
+                                        if (isSelectionMode) toggleSelection(note.id)
+                                        else enterSelectionMode(note.id)
+                                    },
+                                    onShowActions = { bottomSheetNote = note },
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
                         }
                     }
 
-                // ── FOLDER: notes grid ───────────────────────────────
+                // ── FOLDER: sort bar + notes grid ────────────────────
                 } else {
+                    Column(Modifier.fillMaxSize()) {
+                    NotesSortBar(
+                        sortField     = sortField,
+                        sortAscending = sortAscending,
+                        viewType      = viewType,
+                        onSortField   = { sortField = it },
+                        onToggleDir   = { sortAscending = !sortAscending },
+                        onToggleView  = {
+                            viewModel.setViewType(
+                                if (viewType == NoteViewType.GRID) NoteViewType.LIST else NoteViewType.GRID
+                            )
+                        }
+                    )
                     if (currentNotes.isEmpty()) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text(
@@ -570,11 +609,11 @@ fun NoteListScreen(
                                 modifier  = Modifier.padding(32.dp)
                             )
                         }
-                    } else {
+                    } else if (viewType == NoteViewType.GRID) {
                         LazyVerticalGrid(
                             columns              = GridCells.Fixed(3),
                             modifier             = Modifier.fillMaxSize(),
-                            contentPadding       = PaddingValues(horizontal = 8.dp, vertical = 4.dp, ),
+                            contentPadding       = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalArrangement   = Arrangement.spacedBy(6.dp)
                         ) {
@@ -594,7 +633,30 @@ fun NoteListScreen(
                                 )
                             }
                         }
+                    } else {
+                        LazyColumn(
+                            modifier       = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(bottom = 80.dp)
+                        ) {
+                            items(currentNotes, key = { it.id }) { note ->
+                                NoteCard(
+                                    note     = note,
+                                    isSelected = selectedNotes.contains(note.id),
+                                    onClick  = {
+                                        if (isSelectionMode) toggleSelection(note.id)
+                                        else handleNoteClick(note.id)
+                                    },
+                                    onLongPress = {
+                                        if (isSelectionMode) toggleSelection(note.id)
+                                        else enterSelectionMode(note.id)
+                                    },
+                                    onShowActions = { bottomSheetNote = note },
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
                     }
+                    } // end folder Column
                 }
 
                 // Pull-to-refresh indicator (overlays top of the Box)
@@ -611,11 +673,12 @@ fun NoteListScreen(
 
     bottomSheetNote?.let { note ->
         NoteActionsBottomSheet(
-            note      = note,
-            onDismiss = { bottomSheetNote = null },
-            onPin     = { viewModel.togglePin(note.id) },
-            onDelete  = { deleteConfirmNote = note },
-            onLock    = {
+            note           = note,
+            onDismiss      = { bottomSheetNote = null },
+            onPin          = { viewModel.togglePin(note.id) },
+            onDelete       = { deleteConfirmNote = note },
+            onMoveToFolder = { moveToFolderNote = note },
+            onLock         = {
                 viewModel.saveNote(note.copy(isLocked = !note.isLocked, isDirty = true, updatedAt = System.currentTimeMillis()))
             }
         )
@@ -692,6 +755,34 @@ fun NoteListScreen(
         )
     }
 
+    moveToFolderNote?.let { note ->
+        var pickedFolderId by remember(note.id) { mutableStateOf(note.folderId) }
+        AlertDialog(
+            onDismissRequest = { moveToFolderNote = null },
+            title   = { Text("Chuyển thư mục") },
+            text    = {
+                Column {
+                    com.yourname.simplenotes.ui.folder.FolderBrowser(
+                        folders          = categories,
+                        selectedFolderId = pickedFolderId,
+                        onFolderSelect   = { pickedFolderId = it },
+                        onFolderLongPress = {},
+                        modifier         = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.moveNotes(listOf(note.id), pickedFolderId)
+                    moveToFolderNote = null
+                }) { Text("Chuyển") }
+            },
+            dismissButton = {
+                TextButton(onClick = { moveToFolderNote = null }) { Text("Hủy") }
+            }
+        )
+    }
+
     if (showCreateFolderDialog) {
         CreateFolderDialog(
             onConfirm = { name, color ->
@@ -699,6 +790,26 @@ fun NoteListScreen(
                 showCreateFolderDialog = false
             },
             onDismiss = { showCreateFolderDialog = false }
+        )
+    }
+
+    folderToDelete?.let { folder ->
+        AlertDialog(
+            onDismissRequest = { folderToDelete = null },
+            title   = { Text("Delete folder") },
+            text    = { Text("Delete \"${folder.name}\"? Notes inside will be moved to root.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteFolder(folder.id)
+                    if (viewingFolderId == folder.id) {
+                        viewingFolderId = null
+                        isSelectionMode = false
+                        selectedNotes = emptySet()
+                    }
+                    folderToDelete = null
+                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { folderToDelete = null }) { Text("Cancel") } }
         )
     }
 }
@@ -733,7 +844,8 @@ private fun BasicSearchField(
 private fun FolderGrid(
     categories: List<Category>,
     categoryCounts: Map<String, Int>,
-    onFolderClick: (String) -> Unit
+    onFolderClick: (String) -> Unit,
+    onFolderLongPress: (String) -> Unit = {}
 ) {
     Column(
         modifier             = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
@@ -747,9 +859,10 @@ private fun FolderGrid(
                 row.forEach { category ->
                     Box(Modifier.weight(1f)) {
                         FolderCard(
-                            category  = category,
-                            noteCount = categoryCounts[category.id] ?: 0,
-                            onClick   = { onFolderClick(category.id) }
+                            category     = category,
+                            noteCount    = categoryCounts[category.id] ?: 0,
+                            onClick      = { onFolderClick(category.id) },
+                            onLongPress  = { onFolderLongPress(category.id) }
                         )
                     }
                 }
@@ -759,28 +872,45 @@ private fun FolderGrid(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FolderCard(
     category: Category,
     noteCount: Int,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onLongPress: () -> Unit = {}
 ) {
     Card(
-        onClick    = onClick,
         shape      = RoundedCornerShape(12.dp),
         colors     = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation  = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        modifier   = Modifier.aspectRatio(0.85f)
+        modifier   = Modifier.aspectRatio(5f / 3f).combinedClickable(
+            onClick     = onClick,
+            onLongClick = onLongPress
+        )
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            // Colored diagonal ribbon at top-right
+            // Color strip: top-right, width=3/5, height=1/5, bottom-left corner rounded
             val ribbonColor = Color(category.colorArgb)
             Canvas(modifier = Modifier.fillMaxSize()) {
-                val path = Path()
-                path.moveTo(size.width * 0.32f, 0f)
-                path.lineTo(size.width, 0f)
-                path.lineTo(size.width, size.height * 0.52f)
-                path.close()
+                val stripW = size.width * 0.6f
+                val stripH = size.height * 0.2f
+                val r = stripH * 0.6f            // radius matches bottom-left roundness
+                val left = size.width - stripW
+                val path = Path().apply {
+                    moveTo(left, 0f)                         // top-left (square)
+                    lineTo(size.width, 0f)                   // top-right
+                    lineTo(size.width, stripH)               // bottom-right
+                    lineTo(left + r, stripH)                 // bottom edge to arc tangent
+                    arcTo(
+                        rect = Rect(left, stripH - 2 * r, left + 2 * r, stripH),
+                        startAngleDegrees = 90f,
+                        sweepAngleDegrees = 90f,
+                        forceMoveTo = false
+                    )
+                    lineTo(left, 0f)                         // up left edge
+                    close()
+                }
                 drawPath(path, ribbonColor)
             }
             // Note count – top left
@@ -808,8 +938,10 @@ private fun FolderCard(
 private fun NotesSortBar(
     sortField: SortField,
     sortAscending: Boolean,
+    viewType: NoteViewType,
     onSortField: (SortField) -> Unit,
-    onToggleDir: () -> Unit
+    onToggleDir: () -> Unit,
+    onToggleView: () -> Unit
 ) {
     var showDropdown by remember { mutableStateOf(false) }
 
@@ -859,6 +991,18 @@ private fun NotesSortBar(
             modifier = Modifier.size(15.dp).clickable { onToggleDir() },
             tint     = MaterialTheme.colorScheme.onSurfaceVariant
         )
+
+        Spacer(Modifier.width(8.dp))
+        Box(Modifier.width(1.dp).height(14.dp).background(MaterialTheme.colorScheme.outlineVariant))
+        Spacer(Modifier.width(8.dp))
+
+        // Grid / List toggle
+        Icon(
+            if (viewType == NoteViewType.GRID) Icons.Default.ViewList else Icons.Default.GridView,
+            contentDescription = if (viewType == NoteViewType.GRID) "List view" else "Grid view",
+            modifier = Modifier.size(16.dp).clickable { onToggleView() },
+            tint     = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -870,8 +1014,18 @@ private fun CreateFolderDialog(
     var name by remember { mutableStateOf("") }
     var selectedColor by remember { mutableStateOf(0xFF1976D2.toInt()) }
     val colorOptions = listOf(
-        0xFF1976D2.toInt(), 0xFF388E3C.toInt(), 0xFFD32F2F.toInt(),
-        0xFF7B1FA2.toInt(), 0xFFF57C00.toInt(), 0xFF0097A7.toInt()
+        // Blues
+        0xFF1976D2.toInt(), 0xFF1565C0.toInt(), 0xFF0288D1.toInt(), 0xFF0097A7.toInt(),
+        // Greens
+        0xFF388E3C.toInt(), 0xFF2E7D32.toInt(), 0xFF558B2F.toInt(), 0xFF00897B.toInt(),
+        // Reds / Pinks
+        0xFFD32F2F.toInt(), 0xFFC62828.toInt(), 0xFFE91E63.toInt(), 0xFFAD1457.toInt(),
+        // Purples
+        0xFF7B1FA2.toInt(), 0xFF6A1B9A.toInt(), 0xFF4527A0.toInt(), 0xFF283593.toInt(),
+        // Oranges / Yellows
+        0xFFF57C00.toInt(), 0xFFE65100.toInt(), 0xFFF9A825.toInt(), 0xFFF57F17.toInt(),
+        // Browns / Greys
+        0xFF5D4037.toInt(), 0xFF4E342E.toInt(), 0xFF546E7A.toInt(), 0xFF37474F.toInt()
     )
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -885,8 +1039,8 @@ private fun CreateFolderDialog(
                     singleLine    = true,
                     modifier      = Modifier.fillMaxWidth()
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    colorOptions.forEach { colorInt ->
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(colorOptions) { colorInt ->
                         Surface(
                             color    = Color(colorInt),
                             shape    = CircleShape,
@@ -908,6 +1062,70 @@ private fun CreateFolderDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
+}
+
+@Composable
+private fun FolderDrawerItem(
+    node: FolderNode,
+    depth: Int,
+    categoryCounts: Map<String, Int>,
+    selectedFolderId: String?,
+    onFolderClick: (String) -> Unit
+) {
+    val isSelected = selectedFolderId == node.category.id
+    val count = categoryCounts[node.category.id] ?: 0
+    Surface(
+        color = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+        shape = RoundedCornerShape(50),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 1.dp)
+            .clickable { onFolderClick(node.category.id) }
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(
+                    start = 16.dp + (depth * 16).dp,
+                    end = 16.dp,
+                    top = 10.dp,
+                    bottom = 10.dp
+                ),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.Folder, null,
+                tint     = Color(node.category.colorArgb),
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(Modifier.width(16.dp))
+            Text(
+                node.category.name,
+                fontSize = 14.sp,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer
+                        else MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                "$count",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.width(28.dp),
+                textAlign = TextAlign.End
+            )
+        }
+    }
+    node.children.forEach { child ->
+        FolderDrawerItem(
+            node             = child,
+            depth            = depth + 1,
+            categoryCounts   = categoryCounts,
+            selectedFolderId = selectedFolderId,
+            onFolderClick    = onFolderClick
+        )
+    }
 }
 
 /** Selection action bar shown when notes are selected. */

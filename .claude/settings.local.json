@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(mkdir -p \"D:/ClaudeCode/claude-code/simple-notes-app/.claude/commands\")",
-      "Bash(mkdir -p \"C:/Users/test user/.claude/commands\")"
-    ]
-  }
-}

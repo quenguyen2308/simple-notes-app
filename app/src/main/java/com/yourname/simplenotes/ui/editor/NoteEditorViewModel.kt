@@ -17,6 +17,9 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.UUID
 
 class NoteEditorViewModel(
@@ -209,10 +212,18 @@ class NoteEditorViewModel(
                 listOf(textBlock) + imageBlocks
             }
 
+            val hasContent = if (isChecklistMode)
+                checklistItems.any { it.text.isNotBlank() }
+            else
+                plainText.isNotBlank()
+            val effectiveTitle = if (title.isBlank() && (hasContent || imageBlocks.isNotEmpty())) {
+                "Text note ${SimpleDateFormat("dd/MM", Locale.getDefault()).format(Date())}"
+            } else title
+
             repository.save(
                 Note(
                     id = id,
-                    title = title,
+                    title = effectiveTitle,
                     contentBlocks = contentBlocks,
                     folderId = selectedCategoryId,
                     backgroundColor = backgroundColor,

@@ -79,119 +79,114 @@ fun NoteCard(
         note.contentBlocks.any { it is ContentBlock.Image }
     }
 
-    Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .heightIn(min = 100.dp)
-            .then(
-                if (isSelected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
-                else Modifier
+    Column(modifier = modifier) {
+        // ── Card box: content only ───────────────────────────────────
+        Card(
+            modifier  = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 80.dp)
+                .then(
+                    if (isSelected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
+                    else Modifier
+                )
+                .combinedClickable(onClick = onClick, onLongClick = onLongPress),
+            shape     = RoundedCornerShape(12.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 4.dp else 2.dp),
+            colors    = CardDefaults.cardColors(
+                containerColor = noteBackgroundColor ?: Color.White
             )
-            .combinedClickable(onClick = onClick, onLongClick = onLongPress),
-        shape     = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 4.dp else 2.dp),
-        colors    = CardDefaults.cardColors(
-            containerColor = noteBackgroundColor ?: Color.White
-        )
-    ) {
-        Box {
-            Column(modifier = Modifier.padding(10.dp).fillMaxWidth()) {
-
-                // ── Content preview (top) ────────────────────────────
-                if (note.isLocked) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Lock, null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(12.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Locked", fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                } else if (checklistCount > 0) {
-                    Text(
-                        text = "$checklistCount item${if (checklistCount != 1) "s" else ""}",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                } else if (note.content.isNotBlank()) {
-                    Text(
-                        text     = note.content,
-                        fontSize = 11.sp,
-                        maxLines = 5,
-                        overflow = TextOverflow.Ellipsis,
-                        color    = MaterialTheme.colorScheme.onSurface,
-                        lineHeight = 15.sp
-                    )
-                }
-
-                Spacer(Modifier.height(8.dp))
-
-                // ── Title ────────────────────────────────────────────
-                if (note.labels.isNotEmpty()) {
-                    Row {
-                        note.labels.take(2).forEach { label ->
-                            Text(
-                                text = label,
-                                fontSize = 9.sp,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(end = 4.dp)
-                            )
+        ) {
+            Box {
+                Column(modifier = Modifier.padding(10.dp).fillMaxWidth()) {
+                    if (note.isLocked) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Lock, null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(12.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Locked", fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
+                    } else if (checklistCount > 0) {
+                        Text(
+                            text = "$checklistCount item${if (checklistCount != 1) "s" else ""}",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else if (note.content.isNotBlank()) {
+                        Text(
+                            text       = note.content,
+                            fontSize   = 11.sp,
+                            maxLines   = 6,
+                            overflow   = TextOverflow.Ellipsis,
+                            color      = MaterialTheme.colorScheme.onSurface,
+                            lineHeight = 15.sp
+                        )
                     }
                 }
-                Text(
-                    text       = note.title.ifBlank { "Untitled" },
-                    fontWeight = FontWeight.Bold,
-                    fontSize   = 12.sp,
-                    maxLines   = 2,
-                    overflow   = TextOverflow.Ellipsis,
-                    color      = MaterialTheme.colorScheme.onSurface
-                )
 
-                // ── Footer: date + icons ─────────────────────────────
-                Row(
-                    modifier          = Modifier.fillMaxWidth().padding(top = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                // ── ⋮ button overlay (top-right) ────────────────────
+                IconButton(
+                    onClick  = onShowActions,
+                    modifier = Modifier.size(28.dp).align(Alignment.TopEnd)
                 ) {
-                    Text(
-                        text     = dateText,
-                        fontSize = 10.sp,
-                        color    = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f)
-                    )
-                    if (hasImages) {
-                        Icon(Icons.Default.Image, null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(12.dp))
-                        Spacer(Modifier.width(2.dp))
-                    }
-                    if (note.isPinned) {
-                        Icon(Icons.Default.PushPin, null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(12.dp))
-                    }
+                    Icon(Icons.Default.MoreVert, "More",
+                        modifier = Modifier.size(14.dp),
+                        tint     = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-            }
 
-            // ── ⋮ button overlay (top-right) ────────────────────────
-            IconButton(
-                onClick  = onShowActions,
-                modifier = Modifier.size(28.dp).align(Alignment.TopEnd)
-            ) {
-                Icon(Icons.Default.MoreVert, "More",
-                    modifier = Modifier.size(14.dp),
-                    tint     = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-
-            // ── Selection indicator (top-left) ───────────────────────
-            if (isSelected) {
-                Icon(
-                    Icons.Default.CheckCircle, "Selected",
-                    tint     = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp).align(Alignment.TopStart).padding(start = 6.dp, top = 6.dp)
-                )
+                // ── Selection indicator (top-left) ───────────────────
+                if (isSelected) {
+                    Icon(
+                        Icons.Default.CheckCircle, "Selected",
+                        tint     = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp).align(Alignment.TopStart).padding(start = 6.dp, top = 6.dp)
+                    )
+                }
             }
         }
+
+        // ── Title + date below the card box ─────────────────────────
+        Spacer(Modifier.height(4.dp))
+        if (note.labels.isNotEmpty()) {
+            Row {
+                note.labels.take(2).forEach { label ->
+                    Text(
+                        text     = label,
+                        fontSize = 9.sp,
+                        color    = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(end = 4.dp)
+                    )
+                }
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text       = note.title.ifBlank { "Untitled" },
+                fontWeight = FontWeight.Bold,
+                fontSize   = 12.sp,
+                maxLines   = 2,
+                overflow   = TextOverflow.Ellipsis,
+                color      = MaterialTheme.colorScheme.onSurface,
+                modifier   = Modifier.weight(1f)
+            )
+            if (note.isPinned) {
+                Icon(Icons.Default.PushPin, null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(11.dp))
+            }
+            if (hasImages) {
+                Spacer(Modifier.width(2.dp))
+                Icon(Icons.Default.Image, null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(11.dp))
+            }
+        }
+        Text(
+            text     = dateText,
+            fontSize = 10.sp,
+            color    = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 

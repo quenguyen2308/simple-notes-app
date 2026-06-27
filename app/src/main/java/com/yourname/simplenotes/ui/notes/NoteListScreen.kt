@@ -95,7 +95,7 @@ fun NoteListScreen(
         if (pullRefreshState.isRefreshing) {
             viewModel.onResume()
             // Wait for sync to start then finish, timeout 5s as safety net
-            kotlinx.coroutines.withTimeoutOrNull(5_000) {
+            kotlinx.coroutines.withTimeoutOrNull(2_000) {
                 viewModel.isSyncing.first { it }   // wait until running
                 viewModel.isSyncing.first { !it }  // wait until done
             }
@@ -895,7 +895,7 @@ private fun FolderCard(
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val stripW = size.width * 0.6f
                 val stripH = size.height * 0.2f
-                val r = stripH * 0.6f            // radius matches bottom-left roundness
+                val r = stripH * 0.7f            // radius matches bottom-left roundness
                 val left = size.width - stripW
                 val path = Path().apply {
                     moveTo(left, 0f)                         // top-left (square)

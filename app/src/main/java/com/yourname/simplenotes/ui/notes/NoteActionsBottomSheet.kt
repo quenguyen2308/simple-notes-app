@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.Label
+import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Palette
@@ -71,7 +71,7 @@ fun NoteActionsBottomSheet(
             ListItem(
                 headlineContent = { Text("Add label") },
                 leadingContent = {
-                    Icon(Icons.Default.Label, contentDescription = null,
+                    Icon(Icons.AutoMirrored.Filled.Label, contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 },
                 modifier = Modifier.fillMaxWidth().clickable { onAddLabel(); onDismiss() }

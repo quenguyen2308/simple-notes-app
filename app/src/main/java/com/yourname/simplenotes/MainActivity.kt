@@ -84,7 +84,7 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        isSignedIn = authManager.getSignedInAccount() != null
+        isSignedIn = BuildConfig.DEBUG || authManager.getSignedInAccount() != null
         themeMode = SettingsPrefs(this).themeMode
         val requiresAuth = AuthPreferencesManager(this).isBiometricEnabled
 

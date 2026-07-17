@@ -1,5 +1,30 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -e
+
+# ---- Kiểm tra môi trường trên macOS ----
+
+# Đảm bảo gradlew tồn tại và có quyền thực thi (macOS không tự set +x khi clone/copy)
+if [[ ! -f "./gradlew" ]]; then
+    echo "Không tìm thấy ./gradlew — hãy chạy script này từ thư mục gốc của project."
+    exit 1
+fi
+if [[ ! -x "./gradlew" ]]; then
+    echo "gradlew chưa có quyền thực thi, đang tự động chmod +x..."
+    chmod +x ./gradlew
+fi
+
+# Kiểm tra Java đã cài chưa (cần cho Gradle).
+# Lưu ý: trên macOS, `command -v java` luôn thấy /usr/bin/java (stub có sẵn
+# của Apple) dù chưa cài JDK thật, nên phải chạy thử `java -version` mới
+# biết chắc có JRE hoạt động hay không.
+if ! java -version >/dev/null 2>&1; then
+    echo "Không tìm thấy Java runtime hoạt động được."
+    echo "Cài bằng Homebrew: brew install openjdk@17"
+    echo "Sau đó thêm vào ~/.zshrc:"
+    echo "  export JAVA_HOME=\$(/usr/libexec/java_home -v 17)"
+    echo "  export PATH=\"\$JAVA_HOME/bin:\$PATH\""
+    exit 1
+fi
 
 # ---- Đọc param build type từ ngoài vào (debug hoặc release) ----
 BUILD_TYPE="${1:-debug}"   # mặc định là debug nếu không truyền param
@@ -24,6 +49,15 @@ if [[ "$BUILD_TYPE" == "release" ]]; then
     # Nếu chưa cấu hình signing, AGP sẽ ra file "-unsigned"
     if [[ ! -f "$SOURCE_APK" ]]; then
         SOURCE_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+    fi
+fi
+
+# Fallback: nếu 2 đường dẫn cố định trên không có (do flavor/tên module khác),
+# tự tìm file .apk mới nhất được tạo ra trong thư mục build type tương ứng.
+if [[ ! -f "$SOURCE_APK" ]]; then
+    FOUND_APK=$(find "app/build/outputs/apk/${BUILD_TYPE}" -name "*.apk" -type f -print 2>/dev/null | head -n 1)
+    if [[ -n "$FOUND_APK" ]]; then
+        SOURCE_APK="$FOUND_APK"
     fi
 fi
 

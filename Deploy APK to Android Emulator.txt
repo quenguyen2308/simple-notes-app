@@ -1,0 +1,19 @@
+Deploy Debug APK lên Android Emulator
++ Cách 1: Qua Gradle (recommended)
+  ./gradlew installDebug
+  Lệnh này tự động build và install APK lên emulator đang chạy.
+
++ Cách 2: Qua ADB thủ công
+  # 1. Kiểm tra emulator đang chạy
+  adb devices
+  # 2. Install APK
+  adb install app/build/outputs/apk/debug/app-debug.apk
+  # 3. (Optional) Launch app
+  adb shell am start -n com.yourname.simplenotes/.MainActivity
+
++ Cách 3: Drag & Drop
+  1. Mở Android Studio Device Manager (hoặc AVD Manager)
+  2. Start emulator
+  3. Kéo file app/build/outputs/apk/debug/app-debug.apk thả vào cửa sổ emulator
+---
+Điều kiện tiên quyết: Emulator phải đang chạy trước khi install

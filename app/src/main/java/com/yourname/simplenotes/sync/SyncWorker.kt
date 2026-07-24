@@ -73,15 +73,30 @@ class SyncWorker(
             Log.d(TAG, "Uploaded note ${note.id}")
         }
 
-        // Step 4: push updated index
+        // Step 4: permanently remove notes that have been in the recycle bin for more than 30
+        // days. Runs after the download step above so a note already queued for download this
+        // cycle can't be purged and then immediately re-downloaded in the same pass.
+        val cutoff = System.currentTimeMillis() - 30L * 24 * 60 * 60 * 1000
+        repository.purgeOldDeleted(cutoff)
+
+        // Step 5: propagate every pending local permanent-deletion (from purge above, or from
+        // the recycle bin's manual "delete forever") to Drive, so it doesn't get re-downloaded
+        // on a future sync. Must happen before the index upload below.
+        val pendingDeletedIds = repository.getPendingDeletedIds()
+        if (pendingDeletedIds.isNotEmpty()) {
+            Log.i(TAG, "Deleting ${pendingDeletedIds.size} notes from Drive")
+            pendingDeletedIds.forEach { id ->
+                driveDataSource.deleteNote(id)
+                newIndex.remove(id)
+            }
+            repository.clearPendingDeletedIds()
+        }
+
+        // Step 6: push updated index
         driveDataSource.uploadIndex(newIndex)
         Log.i(TAG, "Index uploaded with ${newIndex.size} entries")
 
         syncCategories()
-
-        // Permanently remove notes that have been in the recycle bin for more than 30 days
-        val cutoff = System.currentTimeMillis() - 30L * 24 * 60 * 60 * 1000
-        repository.purgeOldDeleted(cutoff)
     }
 
     private suspend fun syncCategories() {

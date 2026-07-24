@@ -14,18 +14,19 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-
-private val SamsungBlue = Color(0xFF1259C3)
+import com.yourname.simplenotes.ui.theme.isDynamicColorAvailable
 
 @Composable
 fun SettingsScreen(
-    onThemeChange: (String) -> Unit = {}
+    onThemeChange: (String) -> Unit = {},
+    onDynamicColorChange: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
     val prefs = remember { SettingsPrefs(context) }
 
     var themeMode     by remember { mutableStateOf(prefs.themeMode) }
     var notifEnabled  by remember { mutableStateOf(prefs.notificationsEnabled) }
+    var dynamicColorEnabled by remember { mutableStateOf(prefs.dynamicColorEnabled) }
     var showThemeDialog by remember { mutableStateOf(false) }
 
     Column(
@@ -63,6 +64,27 @@ fun SettingsScreen(
                 },
                 onClick = { showThemeDialog = true }
             )
+            if (isDynamicColorAvailable) {
+                RowDivider()
+                PlainRow(
+                    title = "Màu động theo hình nền",
+                    subtitle = "Material You — lấy màu từ hình nền thiết bị",
+                    trailing = {
+                        Switch(
+                            checked = dynamicColorEnabled,
+                            onCheckedChange = {
+                                dynamicColorEnabled = it
+                                prefs.dynamicColorEnabled = it
+                                onDynamicColorChange(it)
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = MaterialTheme.colorScheme.primary
+                            )
+                        )
+                    }
+                )
+            }
         }
 
         Spacer(Modifier.height(8.dp))
@@ -73,7 +95,7 @@ fun SettingsScreen(
             PlainRow(
                 title = "Tự động lưu ghi chú",
                 trailing = {
-                    Text("Bật", fontSize = 13.sp, color = SamsungBlue)
+                    Text("Bật", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
                 }
             )
             RowDivider()
@@ -119,7 +141,7 @@ fun SettingsScreen(
                     },
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = Color.White,
-                        checkedTrackColor = SamsungBlue
+                        checkedTrackColor = MaterialTheme.colorScheme.primary
                     )
                 )
             }
@@ -136,7 +158,7 @@ fun SettingsScreen(
                     onCheckedChange = {},
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = Color.White,
-                        checkedTrackColor = SamsungBlue
+                        checkedTrackColor = MaterialTheme.colorScheme.primary
                     )
                 )
             })
@@ -147,7 +169,7 @@ fun SettingsScreen(
                     onCheckedChange = {},
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = Color.White,
-                        checkedTrackColor = SamsungBlue
+                        checkedTrackColor = MaterialTheme.colorScheme.primary
                     )
                 )
             })
@@ -196,7 +218,7 @@ fun SettingsScreen(
                                     onThemeChange(mode)
                                     showThemeDialog = false
                                 },
-                                colors = RadioButtonDefaults.colors(selectedColor = SamsungBlue)
+                                colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary)
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(label, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)

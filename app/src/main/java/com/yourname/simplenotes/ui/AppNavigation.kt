@@ -40,6 +40,7 @@ fun AppNavigation(
     activity: FragmentActivity,
     requiresAuth: Boolean = false,
     onThemeChange: (String) -> Unit = {},
+    onDynamicColorChange: (Boolean) -> Unit = {},
     navController: NavHostController = rememberNavController()
 ) {
     val startDestination = if (requiresAuth) AuthNavigation.ROUTE_AUTH else ROUTE_LIST
@@ -94,7 +95,8 @@ fun AppNavigation(
                     navController.navigate(route)
                 },
                 onSearchClick = { navController.navigate(ROUTE_SEARCH) },
-                onThemeChange = onThemeChange
+                onThemeChange = onThemeChange,
+                onDynamicColorChange = onDynamicColorChange
             )
         }
 

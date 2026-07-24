@@ -7,7 +7,12 @@ import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Label
@@ -16,9 +21,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.fragment.app.FragmentActivity
@@ -29,10 +37,45 @@ import org.koin.androidx.compose.koinViewModel
 import java.text.SimpleDateFormat
 import java.util.*
 
-private val SamsungBlue = Color(0xFF1259C3)
-private val BottomBarBg = Color(0xFFF5F5F5)
-private val BottomBarBorder = Color(0xFFEEEEEE)
-private val IconTint = Color(0xFF555555)
+/** Icon-over-label bottom toolbar button (Image / Checkbox / Màu). */
+@Composable
+private fun LabeledToolbarButton(
+    icon: ImageVector,
+    label: String,
+    isActive: Boolean = false,
+    onClick: () -> Unit
+) {
+    val color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    ) {
+        Icon(icon, contentDescription = label, tint = color, modifier = Modifier.size(20.dp))
+        Text(label, fontSize = 10.sp, color = color)
+    }
+}
+
+/** Small pill chip for the time/tag row under the title (e.g. "14:30, Hôm nay", "#Tag"). */
+@Composable
+private fun EditorChip(
+    text: String,
+    color: Color,
+    background: Color,
+    onClick: (() -> Unit)? = null
+) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(background)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    ) {
+        Text(text, fontSize = 12.sp, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -79,53 +122,37 @@ fun NoteEditorScreen(
         uri?.let { viewModel.addImage(it.toString()) }
     }
 
+    // Pastel note colors are fixed light hues regardless of app theme, so a custom-colored
+    // note always uses a light background + dark text — theme surface/onSurface colors would
+    // turn dark-background/light-text in dark mode and become unreadable against the pastel.
+    val hasCustomColor = viewModel.backgroundColor != 0xFFFFFFFF.toInt() && viewModel.backgroundColor != 0
+    val editorBg        = if (hasCustomColor) Color(viewModel.backgroundColor) else MaterialTheme.colorScheme.surface
+    val onEditorBg       = if (hasCustomColor) Color(0xFF1B1B1B) else MaterialTheme.colorScheme.onSurface
+    val onEditorBgMuted  = if (hasCustomColor) Color(0xFF1B1B1B).copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurfaceVariant
+
     Scaffold(
-        containerColor = Color.White,
+        containerColor = editorBg,
         topBar = {
             TopAppBar(
                 navigationIcon = {
                     IconButton(onClick = { viewModel.save(); onBack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Quay lại", tint = Color(0xFF444444))
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Quay lại", tint = onEditorBgMuted)
                     }
                 },
-                title = {
-                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        Text(topBarLabel, fontSize = 13.sp, color = Color(0xFF999999))
-                    }
-                },
+                title = {},
                 actions = {
-                    IconButton(onClick = {
-                        val text = buildString {
-                            append(viewModel.title); appendLine()
-                            if (viewModel.isChecklistMode) {
-                                viewModel.checklistItems.forEach { item ->
-                                    appendLine("${if (item.isCompleted) "☑" else "☐"} ${item.text}")
-                                }
-                            } else {
-                                append(viewModel.richTextState.annotatedString.text)
-                            }
-                        }
-                        context.startActivity(Intent.createChooser(
-                            Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_SUBJECT, viewModel.title)
-                                putExtra(Intent.EXTRA_TEXT, text)
-                            }, "Chia sẻ ghi chú"
-                        ))
-                    }) { Icon(Icons.Default.Share, "Chia sẻ", modifier = Modifier.size(18.dp)) }
-
                     IconButton(onClick = viewModel::onPinToggle) {
                         Icon(
                             Icons.Default.PushPin, "Ghim",
                             modifier = Modifier.size(18.dp),
-                            tint = if (viewModel.isPinned) SamsungBlue
-                                   else MaterialTheme.colorScheme.onSurfaceVariant
+                            tint = if (viewModel.isPinned) (if (hasCustomColor) onEditorBg else MaterialTheme.colorScheme.primary)
+                                   else onEditorBgMuted
                         )
                     }
 
                     Box {
                         IconButton(onClick = { showOverflowMenu = true }) {
-                            Icon(Icons.Default.MoreVert, "Thêm", modifier = Modifier.size(18.dp))
+                            Icon(Icons.Default.MoreVert, "Thêm", tint = onEditorBgMuted, modifier = Modifier.size(18.dp))
                         }
                         DropdownMenu(
                             expanded = showOverflowMenu,
@@ -152,9 +179,28 @@ fun NoteEditorScreen(
                             )
                             HorizontalDivider()
                             DropdownMenuItem(
-                                text = { Text("Màu nền") },
-                                leadingIcon = { Icon(Icons.Default.Palette, null) },
-                                onClick = { showColorDialog = true; showOverflowMenu = false }
+                                text = { Text("Chia sẻ") },
+                                leadingIcon = { Icon(Icons.Default.Share, null) },
+                                onClick = {
+                                    showOverflowMenu = false
+                                    val text = buildString {
+                                        append(viewModel.title); appendLine()
+                                        if (viewModel.isChecklistMode) {
+                                            viewModel.checklistItems.forEach { item ->
+                                                appendLine("${if (item.isCompleted) "☑" else "☐"} ${item.text}")
+                                            }
+                                        } else {
+                                            append(viewModel.richTextState.annotatedString.text)
+                                        }
+                                    }
+                                    context.startActivity(Intent.createChooser(
+                                        Intent(Intent.ACTION_SEND).apply {
+                                            type = "text/plain"
+                                            putExtra(Intent.EXTRA_SUBJECT, viewModel.title)
+                                            putExtra(Intent.EXTRA_TEXT, text)
+                                        }, "Chia sẻ ghi chú"
+                                    ))
+                                }
                             )
                             DropdownMenuItem(
                                 text = { Text("Danh mục") },
@@ -169,58 +215,60 @@ fun NoteEditorScreen(
                         }
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
         },
         bottomBar = {
+            // Single floating pill toolbar — inset from the screen edges so it reads as one
+            // cohesive card over the note's background, not a flat bar cut across the bottom.
             Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = BottomBarBg,
-                shadowElevation = 0.dp
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .clip(RoundedCornerShape(28.dp)),
+                color           = MaterialTheme.colorScheme.surface,
+                shadowElevation = 6.dp,
+                tonalElevation  = 2.dp
             ) {
-                Column {
-                    HorizontalDivider(color = BottomBarBorder, thickness = 0.5.dp)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalAlignment     = Alignment.CenterVertically
+                ) {
+                    // Insert image
+                    LabeledToolbarButton(
+                        icon    = Icons.Default.Image,
+                        label   = "Image",
+                        onClick = { galleryLauncher.launch("image/*") }
+                    )
+                    // Toggle checklist / rich-text mode
+                    LabeledToolbarButton(
+                        icon     = if (viewModel.isChecklistMode) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
+                        label    = "Checkbox",
+                        isActive = viewModel.isChecklistMode,
+                        onClick  = viewModel::toggleChecklistMode
+                    )
+                    // Background color
+                    LabeledToolbarButton(
+                        icon    = Icons.Default.Palette,
+                        label   = "Màu",
+                        onClick = { showColorDialog = true }
+                    )
 
-                    // Formatting toolbar (rich text mode only)
+                    // Rich-text formatting controls (hidden in checklist mode) share the
+                    // same floating pill instead of a second stacked bar.
                     if (!viewModel.isChecklistMode) {
-                        RichTextFormattingBar(state = viewModel.richTextState)
-                    }
-
-                    // Action row: checklist | image | spacer | undo | redo
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Toggle checklist / rich-text mode
-                        IconButton(
-                            onClick = viewModel::toggleChecklistMode,
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Icon(
-                                if (viewModel.isChecklistMode) Icons.Default.CheckBox
-                                else Icons.Default.CheckBoxOutlineBlank,
-                                contentDescription = if (viewModel.isChecklistMode) "Chế độ văn bản" else "Chế độ checklist",
-                                tint = if (viewModel.isChecklistMode) SamsungBlue else IconTint,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-                        // Insert image
-                        IconButton(
-                            onClick = { galleryLauncher.launch("image/*") },
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Image,
-                                contentDescription = "Chèn ảnh",
-                                tint = IconTint,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-
-                        Spacer(Modifier.weight(1f))
-
+                        Box(
+                            modifier = Modifier
+                                .padding(horizontal = 4.dp)
+                                .height(24.dp)
+                                .width(1.dp)
+                                .background(MaterialTheme.colorScheme.outlineVariant)
+                        )
+                        RichTextFormattingRow(state = viewModel.richTextState)
                     }
                 }
             }
@@ -230,26 +278,22 @@ fun NoteEditorScreen(
             Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .background(Color(viewModel.backgroundColor))
+                .background(editorBg)
         ) {
-            // Title field
+            // Title field — sits directly on the note's color, not inside the content card
             TextField(
                 value = viewModel.title,
                 onValueChange = viewModel::onTitleChange,
                 placeholder = {
                     Text(
                         "Tiêu đề",
-                        style = MaterialTheme.typography.headlineSmall.copy(
-                            fontWeight = FontWeight.Medium,
-                            fontSize = 17.sp
-                        ),
-                        color = Color(0xFF999999)
+                        style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                        color = onEditorBgMuted
                     )
                 },
-                textStyle = MaterialTheme.typography.headlineSmall.copy(
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 17.sp,
-                    color = Color(0xFF111111)
+                textStyle = MaterialTheme.typography.headlineMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = onEditorBg
                 ),
                 singleLine = true,
                 colors = TextFieldDefaults.colors(
@@ -258,46 +302,88 @@ fun NoteEditorScreen(
                     focusedIndicatorColor = Color.Transparent,
                     unfocusedIndicatorColor = Color.Transparent
                 ),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
             )
 
-            HorizontalDivider(color = Color(0xFFEEEEEE), thickness = 0.5.dp)
-
-            // Image section
-            NoteImageSection(
-                imageBlocks = viewModel.imageBlocks,
-                onInsertImage = { galleryLauncher.launch("image/*") },
-                onRemoveImage = viewModel::removeImage,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-            )
-
-            // Content area
-            if (viewModel.isChecklistMode) {
-                NoteChecklistEditor(
-                    items = viewModel.checklistItems,
-                    onAddItem = viewModel::addChecklistItem,
-                    onRemoveItem = viewModel::removeChecklistItem,
-                    onToggleItem = viewModel::toggleChecklistItem,
-                    onUpdateItemText = viewModel::updateChecklistItemText,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else {
-                com.mohamedrejeb.richeditor.ui.material3.RichTextEditor(
-                    state = viewModel.richTextState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(
-                        fontSize = 14.sp,
-                        color = Color(0xFF333333)
-                    ),
-                    colors = RichTextEditorDefaults.richTextEditorColors(
-                        containerColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent,
-                        cursorColor = SamsungBlue,
+            // Time + tag chips — also on the colored background, below the title
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment     = Alignment.CenterVertically
+            ) {
+                EditorChip(text = topBarLabel, color = onEditorBgMuted, background = onEditorBg.copy(alpha = 0.1f))
+                if (viewModel.labels.isEmpty()) {
+                    EditorChip(
+                        text       = "+ Nhãn",
+                        color      = onEditorBgMuted,
+                        background = onEditorBg.copy(alpha = 0.1f),
+                        onClick    = { showLabelsDialog = true }
                     )
-                )
+                } else {
+                    viewModel.labels.take(2).forEach { label ->
+                        EditorChip(
+                            text       = "#$label",
+                            color      = onEditorBgMuted,
+                            background = onEditorBg.copy(alpha = 0.1f),
+                            onClick    = { showLabelsDialog = true }
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // Content card — the actual note body floats on a neutral surface, distinct from
+            // the colored identity area above (title/time/tags).
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(horizontal = 12.dp)
+                    .padding(bottom = 4.dp),
+                color = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(20.dp)
+            ) {
+                Column(Modifier.fillMaxSize()) {
+                    // Image section
+                    NoteImageSection(
+                        imageBlocks = viewModel.imageBlocks,
+                        onRemoveImage = viewModel::removeImage,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                    )
+
+                    // Content area
+                    if (viewModel.isChecklistMode) {
+                        NoteChecklistEditor(
+                            items = viewModel.checklistItems,
+                            onAddItem = viewModel::addChecklistItem,
+                            onRemoveItem = viewModel::removeChecklistItem,
+                            onToggleItem = viewModel::toggleChecklistItem,
+                            onUpdateItemText = viewModel::updateChecklistItemText,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        com.mohamedrejeb.richeditor.ui.material3.RichTextEditor(
+                            state = viewModel.richTextState,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                fontSize = 14.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            ),
+                            colors = RichTextEditorDefaults.richTextEditorColors(
+                                containerColor = Color.Transparent,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                cursorColor = MaterialTheme.colorScheme.primary,
+                            )
+                        )
+                    }
+                }
             }
         }
     }
@@ -336,7 +422,7 @@ fun NoteEditorScreen(
                             Text(
                                 cat?.name ?: "Không có danh mục",
                                 fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isActive) SamsungBlue else MaterialTheme.colorScheme.onSurface
+                                color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                             )
                         }
                     }

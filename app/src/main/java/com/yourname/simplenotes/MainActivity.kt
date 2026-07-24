@@ -41,6 +41,7 @@ class MainActivity : AppCompatActivity() {
     private var signInError by mutableStateOf<String?>(null)
     /** "system" | "light" | "dark" — triggers recompose on change */
     private var themeMode by mutableStateOf("system")
+    private var dynamicColorEnabled by mutableStateOf(true)
 
     private val signInLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -85,7 +86,9 @@ class MainActivity : AppCompatActivity() {
         })
 
         isSignedIn = BuildConfig.DEBUG || authManager.getSignedInAccount() != null
-        themeMode = SettingsPrefs(this).themeMode
+        val settingsPrefs = SettingsPrefs(this)
+        themeMode = settingsPrefs.themeMode
+        dynamicColorEnabled = settingsPrefs.dynamicColorEnabled
         val requiresAuth = AuthPreferencesManager(this).isBiometricEnabled
 
         setContent {
@@ -95,13 +98,14 @@ class MainActivity : AppCompatActivity() {
                 "light" -> false
                 else    -> systemDark
             }
-            SimpleNotesTheme(darkTheme = darkTheme) {
+            SimpleNotesTheme(darkTheme = darkTheme, dynamicColor = dynamicColorEnabled) {
                 if (isSignedIn) {
                     LaunchedEffect(Unit) { syncScheduler.schedulePeriodicSync() }
                     AppNavigation(
                         activity = this@MainActivity,
                         requiresAuth = requiresAuth,
-                        onThemeChange = { themeMode = it }
+                        onThemeChange = { themeMode = it },
+                        onDynamicColorChange = { dynamicColorEnabled = it }
                     )
                 } else {
                     SignInScreen(

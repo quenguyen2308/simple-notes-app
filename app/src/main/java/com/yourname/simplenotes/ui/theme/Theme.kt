@@ -24,12 +24,22 @@ private val LightColorScheme = lightColorScheme(
     surface    = androidx.compose.ui.graphics.Color.White
 )
 
+/** Material You dynamic color is only available on Android 12+ (API 31). */
+val isDynamicColorAvailable: Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+
 @Composable
 fun SimpleNotesTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    dynamicColor: Boolean = true,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+    val context = LocalContext.current
+    val colorScheme = when {
+        dynamicColor && isDynamicColorAvailable ->
+            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        darkTheme -> DarkColorScheme
+        else      -> LightColorScheme
+    }
 
     MaterialTheme(colorScheme = colorScheme, content = content)
 }

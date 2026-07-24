@@ -18,4 +18,8 @@ interface NoteRepository {
     suspend fun restore(id: String)
     suspend fun permanentDelete(id: String)
     suspend fun purgeOldDeleted(cutoffMs: Long)
+
+    /** Note IDs permanently deleted locally but not yet deleted from Drive — for SyncWorker to clean up remotely. */
+    suspend fun getPendingDeletedIds(): Set<String>
+    suspend fun clearPendingDeletedIds()
 }

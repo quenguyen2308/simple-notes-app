@@ -49,3 +49,4 @@ app/build/
 local.properties
 *.jks
 google-services.json
+apk-releases

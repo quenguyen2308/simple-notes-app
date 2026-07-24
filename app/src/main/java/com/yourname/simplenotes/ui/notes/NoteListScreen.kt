@@ -11,10 +11,8 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -27,6 +25,8 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -37,6 +37,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -45,6 +46,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
+import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.yourname.simplenotes.domain.model.Category
 import com.yourname.simplenotes.domain.model.Note
 import com.yourname.simplenotes.ui.settings.SettingsScreen
@@ -52,8 +55,6 @@ import com.yourname.simplenotes.util.BiometricHelper
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
-
-private val SamsungBlue = Color(0xFF1259C3)
 
 private data class FolderNode(val category: Category, val children: List<FolderNode>)
 
@@ -72,6 +73,89 @@ enum class SortField(val label: String) {
     TITLE("Title")
 }
 
+/**
+ * 2-column masonry layout: notes are zig-zag assigned to columns by index,
+ * so each column's card heights vary naturally with content (no
+ * LazyVerticalStaggeredGrid available at the pinned Compose Foundation version).
+ */
+@Composable
+private fun MasonryNoteGrid(
+    notes: List<Note>,
+    selectedNotes: Set<String>,
+    onNoteClick: (Note) -> Unit,
+    onNoteLongPress: (Note) -> Unit,
+    onShowActions: (Note) -> Unit,
+    modifier: Modifier = Modifier,
+    columns: Int = 2
+) {
+    Row(
+        modifier              = modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        repeat(columns) { col ->
+            Column(
+                modifier            = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                notes.filterIndexed { i, _ -> i % columns == col }.forEach { note ->
+                    NoteCard(
+                        note          = note,
+                        isSelected    = selectedNotes.contains(note.id),
+                        onClick       = { onNoteClick(note) },
+                        onLongPress   = { onNoteLongPress(note) },
+                        onShowActions = { onShowActions(note) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * List-mode row: a colored dot in a left gutter, threaded together by a vertical line running
+ * through the whole list, next to the note card. [isFirst]/[isLast] trim the line so it starts
+ * and ends at the dot instead of overshooting into empty space above/below the list.
+ */
+@Composable
+private fun TimelineNoteRow(
+    note: Note,
+    isSelected: Boolean,
+    isFirst: Boolean,
+    isLast: Boolean,
+    onClick: () -> Unit,
+    onLongPress: () -> Unit,
+    onShowActions: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val dotColor = remember(note.backgroundColor) {
+        val argb = note.backgroundColor
+        if (argb == 0xFFFFFFFF.toInt() || argb == 0) null else Color(argb)
+    } ?: MaterialTheme.colorScheme.outline
+    val lineColor = MaterialTheme.colorScheme.outlineVariant
+
+    Row(modifier = modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+        Canvas(modifier = Modifier.width(28.dp).fillMaxHeight()) {
+            val centerX = size.width / 2f
+            val centerY = size.height / 2f
+            drawLine(
+                color       = lineColor,
+                start       = Offset(centerX, if (isFirst) centerY else 0f),
+                end         = Offset(centerX, if (isLast) centerY else size.height),
+                strokeWidth = 2.dp.toPx()
+            )
+            drawCircle(color = dotColor, radius = 5.dp.toPx(), center = Offset(centerX, centerY))
+        }
+        NoteCard(
+            note          = note,
+            isSelected    = isSelected,
+            onClick       = onClick,
+            onLongPress   = onLongPress,
+            onShowActions = onShowActions,
+            modifier      = Modifier.weight(1f).padding(top = 3.dp, end = 8.dp, bottom = 3.dp)
+        )
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NoteListScreen(
@@ -79,6 +163,7 @@ fun NoteListScreen(
     onNewNote: (String?) -> Unit,
     onSearchClick: () -> Unit = {},
     onThemeChange: (String) -> Unit = {},
+    onDynamicColorChange: (Boolean) -> Unit = {},
     viewModel: NoteListViewModel = koinViewModel()
 ) {
     val notes by viewModel.notes.collectAsStateWithLifecycle()
@@ -87,6 +172,10 @@ fun NoteListScreen(
     val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
     val viewType by viewModel.viewType.collectAsStateWithLifecycle()
     val deletedNotes by viewModel.deletedNotes.collectAsStateWithLifecycle()
+    val totalNoteCount by viewModel.totalNoteCount.collectAsStateWithLifecycle()
+    val allLabels by viewModel.allLabels.collectAsStateWithLifecycle()
+    val selectedLabel by viewModel.selectedLabel.collectAsStateWithLifecycle()
+    val pinnedOnly by viewModel.pinnedOnly.collectAsStateWithLifecycle()
 
     val pullRefreshState = rememberPullToRefreshState()
 
@@ -103,11 +192,12 @@ fun NoteListScreen(
         }
     }
     val context = LocalContext.current
+    val account = remember { GoogleSignIn.getLastSignedInAccount(context) }
+    val accountPhotoUrl = account?.photoUrl
 
     var viewingFolderId by remember { mutableStateOf<String?>(null) }
     var showSettings    by remember { mutableStateOf(false) }
     var showRecycleBin  by remember { mutableStateOf(false) }
-    var showSearchBar   by remember { mutableStateOf(false) }
     var searchQuery     by remember { mutableStateOf("") }
     var showMoreMenu    by remember { mutableStateOf(false) }
     var showCreateFolderDialog by remember { mutableStateOf(false) }
@@ -147,7 +237,6 @@ fun NoteListScreen(
 
     // notes is unfiltered (selectedCategoryId stays null); we filter in UI
     val totalNotes       = notes.size
-    val lockedNotesCount = remember(notes) { notes.count { it.isLocked } }
     val currentFolder    = remember(viewingFolderId, categories) { categories.find { it.id == viewingFolderId } }
 
     val currentNotes = remember(notes, viewingFolderId, searchQuery, sortField, sortAscending) {
@@ -191,96 +280,165 @@ fun NoteListScreen(
     ModalNavigationDrawer(
         drawerState   = drawerState,
         drawerContent = {
-            ModalDrawerSheet(modifier = Modifier.width(300.dp)) {
-                Spacer(Modifier.height(16.dp))
-                // Gear icon
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(end = 8.dp),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    IconButton(onClick = {
-                        showSettings = true
-                        scope.launch { drawerState.close() }
-                    }) {
-                        Icon(Icons.Default.Settings, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            ModalDrawerSheet(
+                drawerContainerColor = MaterialTheme.colorScheme.surface,
+                drawerShape          = RoundedCornerShape(topEnd = 16.dp, bottomEnd = 16.dp),
+                modifier             = Modifier.width(300.dp)
+            ) {
+                Column(Modifier.fillMaxSize().padding(16.dp)) {
+                    // ── Header: account avatar + name/email ─────────────
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(vertical = 24.dp)
+                    ) {
+                        if (accountPhotoUrl != null) {
+                            AsyncImage(
+                                model             = accountPhotoUrl,
+                                contentDescription = null,
+                                contentScale      = ContentScale.Crop,
+                                modifier          = Modifier.size(64.dp).clip(CircleShape)
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primaryContainer),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    (account?.displayName ?: "?").take(1).uppercase(),
+                                    fontSize   = 24.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color      = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(16.dp))
+                        Column {
+                            Text(
+                                account?.displayName ?: "Người dùng",
+                                fontSize   = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color      = MaterialTheme.colorScheme.onSurface
+                            )
+                            if (account?.email != null) {
+                                Text(
+                                    account.email!!,
+                                    fontSize = 14.sp,
+                                    color    = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
                     }
-                }
 
-                Spacer(Modifier.height(4.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Spacer(Modifier.height(16.dp))
 
-                // All notes
-                NavigationDrawerItem(
-                    icon   = { Icon(Icons.AutoMirrored.Filled.Notes, null) },
-                    label  = { Text("All notes") },
-                    badge  = { Text("$totalNotes", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp) },
-                    selected = false,
-                    onClick = { viewingFolderId = null; scope.launch { drawerState.close() } },
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-                NavigationDrawerItem(
-                    icon   = { Icon(Icons.Default.Lock, null) },
-                    label  = { Text("Locked notes") },
-                    badge  = { Text("$lockedNotesCount", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp) },
-                    selected = false,
-                    onClick = { scope.launch { drawerState.close() } },
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-                NavigationDrawerItem(
-                    icon   = { Icon(Icons.Default.Delete, null) },
-                    label  = { Text("Recycle bin") },
-                    badge  = if (deletedNotes.isNotEmpty()) {
-                        { Text("${deletedNotes.size}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp) }
-                    } else null,
-                    selected = showRecycleBin,
-                    onClick = {
-                        showRecycleBin = true
-                        scope.launch { drawerState.close() }
-                    },
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-
-                // Dotted separator
-                Spacer(Modifier.height(8.dp))
-                Canvas(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(1.dp)
-                        .padding(horizontal = 16.dp)
-                ) {
-                    drawLine(
-                        color       = Color.Gray.copy(alpha = 0.4f),
-                        start       = Offset(0f, 0f),
-                        end         = Offset(size.width, 0f),
-                        strokeWidth = 2f,
-                        pathEffect  = PathEffect.dashPathEffect(floatArrayOf(12f, 12f))
+                    // ── Main section: Ghi chú ────────────────────────────
+                    DrawerSectionLabel("Ghi chú")
+                    DrawerNavItem(
+                        icon     = Icons.AutoMirrored.Filled.Notes,
+                        label    = "Tất cả ghi chú",
+                        count    = totalNoteCount,
+                        selected = viewingFolderId == null && !pinnedOnly && selectedLabel == null,
+                        onClick  = {
+                            viewingFolderId = null
+                            viewModel.setPinnedOnly(false)
+                            viewModel.setLabelFilter(null)
+                            scope.launch { drawerState.close() }
+                        }
                     )
-                }
-                Spacer(Modifier.height(8.dp))
+                    DrawerNavItem(
+                        icon     = Icons.Default.PushPin,
+                        label    = "Đã ghim",
+                        selected = pinnedOnly,
+                        onClick  = {
+                            viewingFolderId = null
+                            viewModel.setPinnedOnly(true)
+                            viewModel.setLabelFilter(null)
+                            scope.launch { drawerState.close() }
+                        }
+                    )
 
-                // Folders section header
-                val totalFolderNotes = categories.sumOf { categoryCounts[it.id] ?: 0 }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 24.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Default.FolderOpen, null, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(16.dp))
-                    Text("Folders", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    Text("$totalFolderNotes", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                }
+                    Spacer(Modifier.height(16.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Spacer(Modifier.height(16.dp))
 
-                // Hierarchical folder list
-                val folderTree = remember(categories) { buildFolderTree(categories) }
-                folderTree.forEach { node ->
-                    FolderDrawerItem(
-                        node             = node,
-                        depth            = 0,
-                        categoryCounts   = categoryCounts,
-                        selectedFolderId = viewingFolderId,
-                        onFolderClick    = { id ->
-                            viewingFolderId = id
+                    // ── Tags section: Nhãn ────────────────────────────────
+                    if (allLabels.isNotEmpty()) {
+                        DrawerSectionLabel("Nhãn")
+                        allLabels.forEachIndexed { index, label ->
+                            DrawerTagItem(
+                                color    = DRAWER_TAG_COLORS[index % DRAWER_TAG_COLORS.size],
+                                label    = "#$label",
+                                selected = selectedLabel == label,
+                                onClick  = {
+                                    viewingFolderId = null
+                                    viewModel.setPinnedOnly(false)
+                                    viewModel.setLabelFilter(label)
+                                    scope.launch { drawerState.close() }
+                                }
+                            )
+                        }
+                        Spacer(Modifier.height(16.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Spacer(Modifier.height(16.dp))
+                    }
+
+                    // ── Folders section ───────────────────────────────────
+                    val totalFolderNotes = categories.sumOf { categoryCounts[it.id] ?: 0 }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "THƯ MỤC", fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f)
+                        )
+                        Text("$totalFolderNotes", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    val folderTree = remember(categories) { buildFolderTree(categories) }
+                    folderTree.forEach { node ->
+                        FolderDrawerItem(
+                            node             = node,
+                            depth            = 0,
+                            categoryCounts   = categoryCounts,
+                            selectedFolderId = viewingFolderId,
+                            onFolderClick    = { id ->
+                                viewingFolderId = id
+                                viewModel.setPinnedOnly(false)
+                                viewModel.setLabelFilter(null)
+                                scope.launch { drawerState.close() }
+                            }
+                        )
+                    }
+
+                    Spacer(Modifier.weight(1f))
+
+                    // ── System section ────────────────────────────────────
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Spacer(Modifier.height(16.dp))
+                    DrawerNavItem(
+                        icon     = Icons.Default.Delete,
+                        label    = "Thùng rác",
+                        count    = deletedNotes.size.takeIf { it > 0 },
+                        selected = showRecycleBin,
+                        onClick  = {
+                            showRecycleBin = true
+                            scope.launch { drawerState.close() }
+                        }
+                    )
+                    DrawerNavItem(
+                        icon     = Icons.Default.Settings,
+                        label    = "Cài đặt",
+                        selected = showSettings,
+                        onClick  = {
+                            showSettings = true
                             scope.launch { drawerState.close() }
                         }
                     )
@@ -316,7 +474,7 @@ fun NoteListScreen(
                         modifier = Modifier.padding(start = 8.dp)
                     )
                 }
-                SettingsScreen(onThemeChange = onThemeChange)
+                SettingsScreen(onThemeChange = onThemeChange, onDynamicColorChange = onDynamicColorChange)
             }
             return@ModalNavigationDrawer
         }
@@ -359,7 +517,7 @@ fun NoteListScreen(
                 if (!isSelectionMode) {
                     FloatingActionButton(
                         onClick        = { onNewNote(viewingFolderId) },
-                        containerColor = SamsungBlue,
+                        containerColor = MaterialTheme.colorScheme.primary,
                         contentColor   = Color.White,
                         shape          = CircleShape,
                         modifier       = Modifier.size(48.dp)
@@ -411,12 +569,6 @@ fun NoteListScreen(
                             Icon(Icons.Default.Description, "Export PDF", tint = MaterialTheme.colorScheme.onBackground)
                         }
                     }
-                    IconButton(onClick = { showSearchBar = !showSearchBar; if (!showSearchBar) searchQuery = "" }) {
-                        Icon(
-                            Icons.Default.Search, "Search",
-                            tint = if (showSearchBar) SamsungBlue else MaterialTheme.colorScheme.onBackground
-                        )
-                    }
                     Box {
                         IconButton(onClick = { showMoreMenu = true }) {
                             Icon(Icons.Default.MoreVert, "More", tint = MaterialTheme.colorScheme.onBackground)
@@ -441,13 +593,15 @@ fun NoteListScreen(
                     }
                 }
 
-                // ── Search bar ───────────────────────────────────────
-                if (showSearchBar) {
+                // ── Search bar (always visible) + avatar ─────────────
+                Row(
+                    modifier          = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Row(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 4.dp)
-                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(22.dp))
+                            .weight(1f)
+                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(28.dp))
                             .padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -459,6 +613,31 @@ fun NoteListScreen(
                                 Icons.Default.Close, null,
                                 tint     = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(16.dp).clickable { searchQuery = "" }
+                            )
+                        }
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    if (accountPhotoUrl != null) {
+                        AsyncImage(
+                            model             = accountPhotoUrl,
+                            contentDescription = "Cài đặt",
+                            contentScale      = ContentScale.Crop,
+                            modifier          = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .clickable { showSettings = true }
+                        )
+                    } else {
+                        IconButton(
+                            onClick  = { showSettings = true },
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
+                        ) {
+                            Icon(
+                                Icons.Default.Person, "Cài đặt",
+                                tint     = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
@@ -540,36 +719,28 @@ fun NoteListScreen(
                                 }
                             }
                         } else if (viewType == NoteViewType.GRID) {
-                            items(currentNotes.chunked(3)) { row ->
-                                Row(
-                                    modifier             = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    row.forEach { note ->
-                                        Box(Modifier.weight(1f)) {
-                                            NoteCard(
-                                                note     = note,
-                                                isSelected = selectedNotes.contains(note.id),
-                                                onClick  = {
-                                                    if (isSelectionMode) toggleSelection(note.id)
-                                                    else handleNoteClick(note.id)
-                                                },
-                                                onLongPress = {
-                                                    if (isSelectionMode) toggleSelection(note.id)
-                                                    else enterSelectionMode(note.id)
-                                                },
-                                                onShowActions = { bottomSheetNote = note }
-                                            )
-                                        }
-                                    }
-                                    repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
-                                }
+                            item {
+                                MasonryNoteGrid(
+                                    notes         = currentNotes,
+                                    selectedNotes = selectedNotes,
+                                    onNoteClick   = { note ->
+                                        if (isSelectionMode) toggleSelection(note.id)
+                                        else handleNoteClick(note.id)
+                                    },
+                                    onNoteLongPress = { note ->
+                                        if (isSelectionMode) toggleSelection(note.id)
+                                        else enterSelectionMode(note.id)
+                                    },
+                                    onShowActions = { note -> bottomSheetNote = note }
+                                )
                             }
                         } else {
-                            items(currentNotes, key = { it.id }) { note ->
-                                NoteCard(
-                                    note     = note,
+                            itemsIndexed(currentNotes, key = { _, it -> it.id }) { index, note ->
+                                TimelineNoteRow(
+                                    note       = note,
                                     isSelected = selectedNotes.contains(note.id),
+                                    isFirst    = index == 0,
+                                    isLast     = index == currentNotes.lastIndex,
                                     onClick  = {
                                         if (isSelectionMode) toggleSelection(note.id)
                                         else handleNoteClick(note.id)
@@ -579,7 +750,7 @@ fun NoteListScreen(
                                         else enterSelectionMode(note.id)
                                     },
                                     onShowActions = { bottomSheetNote = note },
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp)
+                                    modifier = Modifier.padding(horizontal = 8.dp)
                                 )
                             }
                         }
@@ -610,26 +781,20 @@ fun NoteListScreen(
                             )
                         }
                     } else if (viewType == NoteViewType.GRID) {
-                        LazyVerticalGrid(
-                            columns              = GridCells.Fixed(3),
-                            modifier             = Modifier.fillMaxSize(),
-                            contentPadding       = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalArrangement   = Arrangement.spacedBy(6.dp)
-                        ) {
-                            items(currentNotes, key = { it.id }) { note ->
-                                NoteCard(
-                                    note     = note,
-                                    isSelected = selectedNotes.contains(note.id),
-                                    onClick  = {
+                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            item {
+                                MasonryNoteGrid(
+                                    notes         = currentNotes,
+                                    selectedNotes = selectedNotes,
+                                    onNoteClick   = { note ->
                                         if (isSelectionMode) toggleSelection(note.id)
                                         else handleNoteClick(note.id)
                                     },
-                                    onLongPress = {
+                                    onNoteLongPress = { note ->
                                         if (isSelectionMode) toggleSelection(note.id)
                                         else enterSelectionMode(note.id)
                                     },
-                                    onShowActions = { bottomSheetNote = note }
+                                    onShowActions = { note -> bottomSheetNote = note }
                                 )
                             }
                         }
@@ -638,10 +803,12 @@ fun NoteListScreen(
                             modifier       = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(bottom = 80.dp)
                         ) {
-                            items(currentNotes, key = { it.id }) { note ->
-                                NoteCard(
-                                    note     = note,
+                            itemsIndexed(currentNotes, key = { _, it -> it.id }) { index, note ->
+                                TimelineNoteRow(
+                                    note       = note,
                                     isSelected = selectedNotes.contains(note.id),
+                                    isFirst    = index == 0,
+                                    isLast     = index == currentNotes.lastIndex,
                                     onClick  = {
                                         if (isSelectionMode) toggleSelection(note.id)
                                         else handleNoteClick(note.id)
@@ -651,7 +818,7 @@ fun NoteListScreen(
                                         else enterSelectionMode(note.id)
                                     },
                                     onShowActions = { bottomSheetNote = note },
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp)
+                                    modifier = Modifier.padding(horizontal = 8.dp)
                                 )
                             }
                         }
@@ -679,7 +846,21 @@ fun NoteListScreen(
             onDelete       = { deleteConfirmNote = note },
             onMoveToFolder = { moveToFolderNote = note },
             onLock         = {
-                viewModel.saveNote(note.copy(isLocked = !note.isLocked, isDirty = true, updatedAt = System.currentTimeMillis()))
+                fun applyLock(locked: Boolean) {
+                    viewModel.saveNote(note.copy(isLocked = locked, isDirty = true, updatedAt = System.currentTimeMillis()))
+                }
+                if (note.isLocked) {
+                    BiometricHelper.authenticateWithDeviceCredential(
+                        activity = context as FragmentActivity,
+                        title    = "Mở khóa ghi chú",
+                        onSuccess = { applyLock(false) },
+                        onError   = {}
+                    )
+                } else if (!BiometricHelper.isDeviceSecure(context)) {
+                    showNoPasscodeDialog = true
+                } else {
+                    applyLock(true)
+                }
             }
         )
     }
@@ -1064,6 +1245,80 @@ private fun CreateFolderDialog(
     )
 }
 
+/** Pastel dot colors cycled through the "Nhãn" (tags) list in the drawer. */
+private val DRAWER_TAG_COLORS = listOf(
+    Color(0xFFFFB3C6), Color(0xFFA8D8F0), Color(0xFFD4C5F9),
+    Color(0xFFA8E6B0), Color(0xFFFFC178), Color(0xFF8DE0D0)
+)
+
+@Composable
+private fun DrawerSectionLabel(text: String) {
+    Text(
+        text,
+        fontSize   = 12.sp,
+        fontWeight = FontWeight.Bold,
+        color      = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier   = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+    )
+}
+
+/** Pill-shaped nav row for the drawer (mirrors the left-nav reference: 56dp, fully rounded, selected = primaryContainer). */
+@Composable
+private fun DrawerNavItem(
+    icon: ImageVector,
+    label: String,
+    selected: Boolean,
+    count: Int? = null,
+    onClick: () -> Unit
+) {
+    val bg = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+    val content = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .clip(RoundedCornerShape(28.dp))
+            .background(bg)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp)
+    ) {
+        Icon(icon, null, tint = content, modifier = Modifier.size(24.dp))
+        Spacer(Modifier.width(16.dp))
+        Text(
+            label, fontSize = 16.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            color = content, modifier = Modifier.weight(1f)
+        )
+        if (count != null) {
+            Text("$count", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** Colored-dot row for a label/tag filter shortcut in the drawer. */
+@Composable
+private fun DrawerTagItem(color: Color, label: String, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(44.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .background(if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp)
+    ) {
+        Box(Modifier.size(12.dp).clip(CircleShape).background(color))
+        Spacer(Modifier.width(16.dp))
+        Text(
+            label, fontSize = 15.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
+
 @Composable
 private fun FolderDrawerItem(
     node: FolderNode,
@@ -1075,7 +1330,7 @@ private fun FolderDrawerItem(
     val isSelected = selectedFolderId == node.category.id
     val count = categoryCounts[node.category.id] ?: 0
     Surface(
-        color = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
         shape = RoundedCornerShape(50),
         modifier = Modifier
             .fillMaxWidth()
@@ -1105,7 +1360,7 @@ private fun FolderDrawerItem(
                 modifier = Modifier.weight(1f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                color = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer
+                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
                         else MaterialTheme.colorScheme.onSurface
             )
             Text(

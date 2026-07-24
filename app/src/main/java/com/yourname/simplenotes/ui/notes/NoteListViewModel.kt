@@ -11,6 +11,7 @@ import com.yourname.simplenotes.domain.model.Category
 import com.yourname.simplenotes.domain.model.Note
 import com.yourname.simplenotes.sync.SyncScheduler
 import com.yourname.simplenotes.sync.SyncWorker
+import com.yourname.simplenotes.ui.settings.SettingsPrefs
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -40,11 +41,15 @@ class NoteListViewModel(
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
+    private val settingsPrefs = SettingsPrefs(context)
+
     /** Currently selected category filter (null = show all). */
     val selectedCategoryId = MutableStateFlow<String?>(null)
 
-    /** Active view type (list / grid / detail). */
-    val viewType = MutableStateFlow(NoteViewType.LIST)
+    /** Active view type (list / grid / detail) — restored from the last saved choice. */
+    val viewType = MutableStateFlow(
+        runCatching { NoteViewType.valueOf(settingsPrefs.noteViewType) }.getOrDefault(NoteViewType.LIST)
+    )
 
     /** All categories for the filter chip row. */
     val categories: StateFlow<List<Category>> = categoryRepository.observeAll()
@@ -57,6 +62,19 @@ class NoteListViewModel(
     /** Currently selected background-color filter (null = show all). */
     private val _selectedColor = MutableStateFlow<Int?>(null)
     val selectedColor: StateFlow<Int?> = _selectedColor.asStateFlow()
+
+    /** When true, [notes] only includes pinned notes (drawer "Đã ghim" shortcut). */
+    private val _pinnedOnly = MutableStateFlow(false)
+    val pinnedOnly: StateFlow<Boolean> = _pinnedOnly.asStateFlow()
+
+    fun setPinnedOnly(value: Boolean) { _pinnedOnly.value = value }
+
+    fun setLabelFilter(label: String?) { _selectedLabel.value = label }
+
+    /** True unfiltered note count, for the drawer's "Tất cả ghi chú" badge ([notes] is filtered). */
+    val totalNoteCount: StateFlow<Int> = repository.observeAll()
+        .map { it.size }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     /** All unique labels across all notes (for filter chips). */
     val allLabels: StateFlow<List<String>> = repository.observeAll()
@@ -72,17 +90,19 @@ class NoteListViewModel(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    /** Notes filtered by category, label, and color — pinned first, then by updatedAt desc. */
+    /** Notes filtered by category, label, color, and pinned-only — pinned first, then by updatedAt desc. */
     val notes: StateFlow<List<Note>> = combine(
         repository.observeAll(),
         selectedCategoryId,
         _selectedLabel,
-        _selectedColor
-    ) { allNotes, categoryId, label, color ->
+        _selectedColor,
+        _pinnedOnly
+    ) { allNotes, categoryId, label, color, pinnedOnly ->
         val filtered = allNotes
             .filter { note -> categoryId == null || note.folderId == categoryId }
             .filter { note -> label == null || label in note.labels }
             .filter { note -> color == null || note.backgroundColor == color }
+            .filter { note -> !pinnedOnly || note.isPinned }
         filtered.sortedWith(
             compareByDescending<Note> { it.isPinned }.thenByDescending { it.updatedAt }
         )
@@ -160,7 +180,10 @@ class NoteListViewModel(
     fun selectCategory(id: String?) { selectedCategoryId.value = id }
     fun selectLabel(label: String?) { _selectedLabel.value = label }
     fun selectColor(color: Int?) { _selectedColor.value = color }
-    fun setViewType(type: NoteViewType) { viewType.value = type }
+    fun setViewType(type: NoteViewType) {
+        viewType.value = type
+        settingsPrefs.noteViewType = type.name
+    }
 
     fun addCategory(name: String, colorArgb: Int) {
         viewModelScope.launch {

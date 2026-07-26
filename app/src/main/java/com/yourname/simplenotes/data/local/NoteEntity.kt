@@ -27,7 +27,10 @@ data class NoteEntity(
     /** JSON-serialized NoteMetadata (word count, character count, read time). */
     @ColumnInfo(name = "metadata_json") val metadataJson: String = "{}",
     val createdAt: Long,
+    /** Sync clock for Drive last-write-wins — bumped on every save, cosmetic or not. */
     val updatedAt: Long,
+    /** User-facing "date modified" — bumped only on real content edits. See [NoteEntity]. */
+    val contentUpdatedAt: Long = updatedAt,
     /** true = note has local changes not yet uploaded to Drive. */
     val isDirty: Boolean = true,
     val isDeleted: Boolean = false,

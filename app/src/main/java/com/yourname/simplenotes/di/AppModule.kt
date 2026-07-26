@@ -46,7 +46,7 @@ val appModule = module {
 
     // --- ViewModels ---
     viewModel { NoteListViewModel(get(), get(), get(), androidContext()) }
-    viewModel { NoteEditorViewModel(get(), get()) }
+    viewModel { NoteEditorViewModel(get(), get(), androidContext()) }
     viewModel { FolderViewModel(get(), get()) }
     viewModel { SearchViewModel(get(), get()) }
 }

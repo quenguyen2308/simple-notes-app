@@ -18,7 +18,13 @@ data class Note(
     val isPinned: Boolean = false,
     val labels: List<String> = emptyList(),
     val createdAt: Long,
+    /** Sync clock — bumped on ANY save (content, color, pin, lock, folder…). Drives Drive's
+     *  last-write-wins conflict resolution (see SyncWorker). Never shown to the user directly. */
     val updatedAt: Long,
+    /** User-facing "date modified" — bumped only when title/body/checklist actually changes.
+     *  Cosmetic-only saves (recolor, pin, lock, move to folder) leave this untouched so the note
+     *  doesn't misleadingly jump to the top of a "sorted by date modified" list. */
+    val contentUpdatedAt: Long = updatedAt,
     val metadata: NoteMetadata = NoteMetadata.EMPTY,
     val isDirty: Boolean = true,
     val isDeleted: Boolean = false,

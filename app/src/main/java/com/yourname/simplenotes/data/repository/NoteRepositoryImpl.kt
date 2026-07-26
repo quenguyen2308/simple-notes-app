@@ -99,6 +99,18 @@ class NoteRepositoryImpl(
 
     override suspend fun clearPendingDeletedIds() = noteSyncPrefs.clear()
 
+    override suspend fun getCleanDeletedNoteIds(): List<String> = dao.getCleanDeletedNoteIds()
+
+    override suspend fun purgeRemotelyDeleted(ids: List<String>) {
+        ids.forEach { id ->
+            dao.permanentDeleteById(id)
+            noteSearchDao.deleteByNoteId(id)
+        }
+    }
+
+    override suspend fun clearOrphanedFolderRefs(validFolderIds: Set<String>) =
+        dao.clearOrphanedFolderRefs(validFolderIds.toList())
+
     override suspend fun upsertFromRemote(notes: List<Note>) {
         val entities = notes.map { it.toEntity().copy(isDirty = false) }
         dao.upsertAll(entities)

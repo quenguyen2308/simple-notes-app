@@ -56,4 +56,25 @@ interface NoteDao {
     /** Bulk-removes soft-deleted notes whose deletion timestamp is older than [cutoffMs]. */
     @Query("DELETE FROM notes WHERE isDeleted = 1 AND updatedAt < :cutoffMs")
     suspend fun purgeOldDeletedNotes(cutoffMs: Long)
+
+    /**
+     * IDs of soft-deleted notes that have already been synced (no pending local edit).
+     * Used by SyncWorker to detect a note permanently deleted on another device — Drive's
+     * index no longer lists it, so this device's trash copy is a ghost and should be purged too.
+     */
+    @Query("SELECT id FROM notes WHERE isDeleted = 1 AND isDirty = 0")
+    suspend fun getCleanDeletedNoteIds(): List<String>
+
+    /**
+     * Defensive healing pass: un-assigns (folder_id = NULL) any active note whose folder no
+     * longer exists locally — e.g. a category deleted on another device whose note-reassignment
+     * update didn't land on this device (upload failure, race, offline gap). Without this such a
+     * note becomes invisible everywhere in the UI (matches no real folder, and isn't "no folder"
+     * either) while still counting toward the total note count.
+     */
+    @Query(
+        "UPDATE notes SET folder_id = NULL, isDirty = 1, updatedAt = :now " +
+            "WHERE isDeleted = 0 AND folder_id IS NOT NULL AND folder_id NOT IN (:validFolderIds)"
+    )
+    suspend fun clearOrphanedFolderRefs(validFolderIds: List<String>, now: Long = System.currentTimeMillis())
 }

@@ -22,7 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 // 12 preset note background colors (ARGB) — vivid pastels, not washed-out tints
-private val NOTE_COLORS = listOf(
+val NOTE_COLORS = listOf(
     0xFFFFFFFF.toInt(), // White (default)
     0xFFFFE066.toInt(), // Yellow
     0xFFA8E6B0.toInt(), // Green

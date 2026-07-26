@@ -104,14 +104,14 @@ class NoteListViewModel(
             .filter { note -> color == null || note.backgroundColor == color }
             .filter { note -> !pinnedOnly || note.isPinned }
         filtered.sortedWith(
-            compareByDescending<Note> { it.isPinned }.thenByDescending { it.updatedAt }
+            compareByDescending<Note> { it.isPinned }.thenByDescending { it.contentUpdatedAt }
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Recent notes (sorted by last modified, latest first) - max 10 notes. */
     val recentNotes: StateFlow<List<Note>> = repository.observeAll()
         .map { notes ->
-            notes.sortedByDescending { it.updatedAt }.take(10)
+            notes.sortedByDescending { it.contentUpdatedAt }.take(10)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -140,6 +140,11 @@ class NoteListViewModel(
 
     fun saveNote(note: Note) {
         viewModelScope.launch { repository.save(note) }
+    }
+
+    /** Persists notes built from imported files (Settings → "Nhập ghi chú"), one per file. */
+    fun importNotes(notes: List<Note>) {
+        viewModelScope.launch { notes.forEach { repository.save(it) } }
     }
 
     /** Delete multiple notes by IDs. */
@@ -177,6 +182,17 @@ class NoteListViewModel(
         }
     }
 
+    /** Unpins multiple notes at once (e.g. "Unpin favourites from top"). */
+    fun unpinNotes(ids: List<String>) {
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            ids.forEach { id ->
+                val note = repository.getById(id) ?: return@forEach
+                repository.save(note.copy(isPinned = false, isDirty = true, updatedAt = now))
+            }
+        }
+    }
+
     fun selectCategory(id: String?) { selectedCategoryId.value = id }
     fun selectLabel(label: String?) { _selectedLabel.value = label }
     fun selectColor(color: Int?) { _selectedColor.value = color }
@@ -190,6 +206,14 @@ class NoteListViewModel(
             categoryRepository.save(
                 Category(id = UUID.randomUUID().toString(), name = name, colorArgb = colorArgb)
             )
+        }
+    }
+
+    /** Updates an existing folder's name and color (e.g. from the long-press edit dialog). */
+    fun updateCategory(id: String, name: String, colorArgb: Int) {
+        viewModelScope.launch {
+            val category = categoryRepository.getById(id) ?: return@launch
+            categoryRepository.save(category.copy(name = name.trim(), colorArgb = colorArgb))
         }
     }
 

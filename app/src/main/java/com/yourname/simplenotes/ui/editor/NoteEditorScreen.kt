@@ -83,9 +83,10 @@ fun NoteEditorScreen(
     noteId: String?,
     onBack: () -> Unit,
     initialCategoryId: String? = null,
+    sharedText: String? = null,
     viewModel: NoteEditorViewModel = koinViewModel()
 ) {
-    LaunchedEffect(noteId) { viewModel.load(noteId, initialCategoryId) }
+    LaunchedEffect(noteId) { viewModel.load(noteId, initialCategoryId, sharedText) }
 
     val context = LocalContext.current
     val categories by viewModel.categories.collectAsStateWithLifecycle()

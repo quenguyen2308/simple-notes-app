@@ -11,17 +11,37 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 
 private val DarkColorScheme = darkColorScheme(
-    primary = SamsungBlueLight,
-    secondary = SamsungBlue,
-    tertiary = SamsungBlueDark
+    primary          = DeskCoral,
+    onPrimary        = DeskOnAccent,
+    secondary        = DeskAmber,
+    onSecondary      = DeskOnAccent,
+    tertiary         = DeskSage,
+    onTertiary       = DeskOnAccent,
+    background       = DeskWalnut,
+    onBackground     = DeskParchment,
+    surface          = DeskWalnutSurface,
+    onSurface        = DeskParchment,
+    surfaceVariant   = DeskWalnutSurface2,
+    onSurfaceVariant = DeskParchmentMuted,
+    outline          = DeskParchmentMuted,
+    outlineVariant   = DeskWalnutSurface2
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary   = SamsungBlue,
-    secondary = SamsungBlueDark,
-    tertiary  = SamsungBlueLight,
-    background = androidx.compose.ui.graphics.Color.White,
-    surface    = androidx.compose.ui.graphics.Color.White
+    primary          = DeskCoral,
+    onPrimary        = DeskOnAccent,
+    secondary        = DeskAmber,
+    onSecondary      = DeskOnAccent,
+    tertiary         = DeskSage,
+    onTertiary       = DeskOnAccent,
+    background       = DeskOak,
+    onBackground     = DeskInk,
+    surface          = DeskOakSurface,
+    onSurface        = DeskInk,
+    surfaceVariant   = DeskOakSurface2,
+    onSurfaceVariant = DeskInkMuted,
+    outline          = DeskInkMuted,
+    outlineVariant   = DeskOakSurface2
 )
 
 /** Material You dynamic color is only available on Android 12+ (API 31). */

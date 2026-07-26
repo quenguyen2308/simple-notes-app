@@ -37,7 +37,7 @@ class CategoryRepositoryImpl(
     override suspend fun getById(id: String): Category? = dao.getById(id)?.toDomain()
 
     override suspend fun save(category: Category) {
-        dao.upsert(category.toEntity())
+        dao.upsert(category.copy(updatedAt = System.currentTimeMillis()).toEntity())
         syncScheduler.triggerImmediateSync()  // Bug 5 fix
     }
 
@@ -69,7 +69,8 @@ private fun Category.toEntity() = CategoryEntity(
     name = name,
     colorArgb = colorArgb,
     parentId = parentId,
-    order = order
+    order = order,
+    updatedAt = updatedAt
 )
 
 /** Builds a nested folder tree from a flat list, sorted by order within each level. */
@@ -83,5 +84,6 @@ private fun CategoryEntity.toDomain() = Category(
     name = name,
     colorArgb = colorArgb,
     parentId = parentId,
-    order = order
+    order = order,
+    updatedAt = updatedAt
 )

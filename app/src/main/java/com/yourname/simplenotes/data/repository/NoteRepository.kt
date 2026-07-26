@@ -22,4 +22,12 @@ interface NoteRepository {
     /** Note IDs permanently deleted locally but not yet deleted from Drive — for SyncWorker to clean up remotely. */
     suspend fun getPendingDeletedIds(): Set<String>
     suspend fun clearPendingDeletedIds()
+
+    /** IDs of already-synced trashed notes — for SyncWorker to detect a permanent deletion made on another device. */
+    suspend fun getCleanDeletedNoteIds(): List<String>
+    /** Removes notes already gone from Drive (deleted elsewhere) — local-only cleanup, no Drive round-trip needed. */
+    suspend fun purgeRemotelyDeleted(ids: List<String>)
+
+    /** Un-assigns any note referencing a folder ID outside [validFolderIds] — see NoteDao.clearOrphanedFolderRefs. */
+    suspend fun clearOrphanedFolderRefs(validFolderIds: Set<String>)
 }

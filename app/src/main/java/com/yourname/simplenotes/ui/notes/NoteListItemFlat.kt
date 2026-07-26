@@ -49,13 +49,13 @@ fun NoteListItemFlat(
         else          -> bgNormal
     }
 
-    val timestamp = remember(note.updatedAt) {
-        val diff = System.currentTimeMillis() - note.updatedAt
+    val timestamp = remember(note.contentUpdatedAt) {
+        val diff = System.currentTimeMillis() - note.contentUpdatedAt
         when {
             diff < 60_000        -> "Vừa xong"
             diff < 3_600_000     -> "${diff / 60_000}p trước"
             diff < 86_400_000    -> "${diff / 3_600_000}h trước"
-            else -> SimpleDateFormat("d/M/yyyy", Locale.getDefault()).format(Date(note.updatedAt))
+            else -> SimpleDateFormat("d/M/yyyy", Locale.getDefault()).format(Date(note.contentUpdatedAt))
         }
     }
 
@@ -85,11 +85,11 @@ fun NoteListItemFlat(
                 // Title row
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (note.isPinned) {
-                        Text("★ ", color = ColorStar, fontSize = 9.sp)
+                        Text("★ ", color = ColorStar, fontSize = 11.sp)
                     }
                     Text(
                         text = note.title.ifEmpty { "Ghi chú" },
-                        fontSize = 13.sp,
+                        fontSize = 16.sp,
                         fontWeight = FontWeight.Medium,
                         color = colorTitle,
                         maxLines = 1,
@@ -103,7 +103,7 @@ fun NoteListItemFlat(
                 if (preview.isNotEmpty()) {
                     Text(
                         text = preview,
-                        fontSize = 11.sp,
+                        fontSize = 13.sp,
                         color = colorPreview,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -111,7 +111,7 @@ fun NoteListItemFlat(
                     Spacer(Modifier.height(3.dp))
                 }
                 // Timestamp
-                Text(text = timestamp, fontSize = 10.sp, color = colorTs)
+                Text(text = timestamp, fontSize = 12.sp, color = colorTs)
             }
         }
 

@@ -1,5 +1,7 @@
 package com.yourname.simplenotes.ui.editor
 
+import android.content.Context
+import androidx.core.text.HtmlCompat
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -13,6 +15,8 @@ import com.yourname.simplenotes.data.repository.NoteRepository
 import com.yourname.simplenotes.domain.model.Category
 import com.yourname.simplenotes.domain.model.Note
 import com.yourname.simplenotes.domain.model.NoteMetadata
+import com.yourname.simplenotes.ui.settings.SettingsPrefs
+import com.yourname.simplenotes.util.toEditorHtml
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -24,8 +28,11 @@ import java.util.UUID
 
 class NoteEditorViewModel(
     private val repository: NoteRepository,
-    private val categoryRepository: CategoryRepository
+    private val categoryRepository: CategoryRepository,
+    context: Context
 ) : ViewModel() {
+
+    private val settingsPrefs = SettingsPrefs(context)
 
     var title by mutableStateOf("")
         private set
@@ -79,13 +86,27 @@ class NoteEditorViewModel(
     private var existingContentBlocks: List<ContentBlock> = emptyList()
     private var isNewNote = false
 
-    /** Load an existing note by id, or prepare a blank note for "new". */
-    fun load(id: String?, initialCategoryId: String? = null) {
+    // Snapshot of the loaded note's content, used at save() time to tell a real content edit
+    // (title/body/checklist) apart from a cosmetic-only save (color, pin, lock, folder…) — only
+    // the former should bump contentUpdatedAt (the user-facing "date modified").
+    private var originalTitle: String = ""
+    private var originalContentUpdatedAt: Long = 0L
+
+    /**
+     * Load an existing note by id, or prepare a blank note for "new".
+     * [sharedText] pre-fills the body when the note was opened from another app's
+     * share sheet (e.g. Samsung Notes, Easy Note) — ignored for existing notes.
+     */
+    fun load(id: String?, initialCategoryId: String? = null, sharedText: String? = null) {
         if (id == null || id == "new") {
             noteId = UUID.randomUUID().toString()
             createdAt = System.currentTimeMillis()
             isNewNote = true
             selectedCategoryId = initialCategoryId
+            backgroundColor = settingsPrefs.defaultNoteBackground
+            if (!sharedText.isNullOrBlank()) {
+                richTextState.setHtml(sharedText.toEditorHtml())
+            }
             return
         }
         viewModelScope.launch {
@@ -100,6 +121,8 @@ class NoteEditorViewModel(
                 isPinned = note.isPinned
                 labels = note.labels
                 existingContentBlocks = note.contentBlocks
+                originalTitle = note.title
+                originalContentUpdatedAt = note.contentUpdatedAt
                 imageBlocks = note.contentBlocks.filterIsInstance<ContentBlock.Image>()
 
                 // Detect checklist block — takes priority over text block
@@ -202,7 +225,11 @@ class NoteEditorViewModel(
 
         viewModelScope.launch {
             val html = richTextState.toHtml()
-            val plainText = richTextState.annotatedString.text
+            // richTextState.annotatedString.text replaces '\n' with ' ' internally (paragraph
+            // breaks are structural ParagraphStyle spans, not literal newlines), so the plain
+            // text used for search/preview/sync must be rebuilt from the HTML instead, which
+            // does encode each paragraph as its own <p>/<br> block.
+            val plainText = HtmlCompat.fromHtml(html, HtmlCompat.FROM_HTML_MODE_COMPACT).toString().trim()
 
             // Build content blocks based on current mode; imageBlocks is the source of truth
             val contentBlocks = if (isChecklistMode) {
@@ -220,6 +247,15 @@ class NoteEditorViewModel(
                 "Text note ${SimpleDateFormat("dd/MM", Locale.getDefault()).format(Date())}"
             } else title
 
+            val now = System.currentTimeMillis()
+            // Only a real edit to title/body/checklist/images bumps the user-facing "date
+            // modified" — reordering the folder, pinning, locking, etc. don't, even though they
+            // still bump updatedAt below (needed for Drive's last-write-wins conflict resolution).
+            val contentChanged = isNewNote ||
+                effectiveTitle != originalTitle ||
+                contentBlocks != existingContentBlocks
+            val newContentUpdatedAt = if (contentChanged) now else originalContentUpdatedAt
+
             repository.save(
                 Note(
                     id = id,
@@ -229,8 +265,9 @@ class NoteEditorViewModel(
                     backgroundColor = backgroundColor,
                     isPinned = isPinned,
                     labels = labels,
-                    createdAt = if (createdAt == 0L) System.currentTimeMillis() else createdAt,
-                    updatedAt = System.currentTimeMillis(),
+                    createdAt = if (createdAt == 0L) now else createdAt,
+                    updatedAt = now,
+                    contentUpdatedAt = newContentUpdatedAt,
                     metadata = NoteMetadata.from(plainText),
                     isDirty = true,
                     isDeleted = false,

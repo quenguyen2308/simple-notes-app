@@ -33,12 +33,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -70,9 +72,23 @@ fun NoteCard(
     onLongPress: () -> Unit = {},
     onClick: () -> Unit = {},
     onShowActions: () -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** "Bàn Làm Việc" sticky-note look: a small stable per-note tilt plus a flat, hard-edged
+     *  paper shadow instead of Material's soft blurred elevation. */
+    tilted: Boolean = false
 ) {
-    val dateText = remember(note.updatedAt) { formatCardDate(note.updatedAt) }
+    val dateText = remember(note.contentUpdatedAt) { formatCardDate(note.contentUpdatedAt) }
+
+    // Stable per-note tilt derived from the note's own id, so it doesn't reshuffle on every
+    // recomposition/scroll — same note always leans the same way, like a real note that's been
+    // pressed onto the desk once.
+    val tiltDeg = remember(note.id, tilted) {
+        if (!tilted) 0f
+        else {
+            val h = ((note.id.hashCode() % 10_000) + 10_000) % 10_000
+            (h / 10_000f) * 4.4f - 2.2f // roughly -2.2°..+2.2°
+        }
+    }
 
     val noteBackgroundColor = remember(note.backgroundColor) {
         val argb = note.backgroundColor
@@ -93,19 +109,40 @@ fun NoteCard(
         note.contentBlocks.filterIsInstance<ContentBlock.Image>().firstOrNull()?.uri
     }
 
-    Column(modifier = modifier) {
+    Box(
+        modifier = modifier.then(
+            if (tiltDeg != 0f) Modifier.graphicsLayer(rotationZ = tiltDeg) else Modifier
+        )
+    ) {
+        // ── Hard, flat paper shadow (only when tilted) — a solid offset copy of the card's
+        // shape instead of Material's soft blurred elevation, like a cut-out sticky note. ──
+        if (tilted) {
+            val shadowColor = remember(noteBackgroundColor) {
+                (noteBackgroundColor ?: Color(0xFFBEB6A8)).darken(0.4f)
+            }
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .offset(x = 3.dp, y = 4.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(shadowColor)
+            )
+        }
+
         // ── Card box: content only ───────────────────────────────────
         Card(
             modifier  = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 80.dp)
                 .then(
-                    if (isSelected) Modifier.border(2.dp, onCardAccent, RoundedCornerShape(12.dp))
+                    if (isSelected) Modifier.border(2.dp, onCardAccent, RoundedCornerShape(18.dp))
                     else Modifier
                 )
                 .combinedClickable(onClick = onClick, onLongClick = onLongPress),
-            shape     = RoundedCornerShape(12.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 4.dp else 2.dp),
+            shape     = RoundedCornerShape(18.dp),
+            elevation = CardDefaults.cardElevation(
+                defaultElevation = if (tilted) 0.dp else if (isSelected) 6.dp else 3.dp
+            ),
             colors    = CardDefaults.cardColors(
                 containerColor = noteBackgroundColor ?: MaterialTheme.colorScheme.surfaceVariant
             )
@@ -131,7 +168,7 @@ fun NoteCard(
                         Text(
                             text       = note.title.ifBlank { "Untitled" },
                             fontWeight = FontWeight.Bold,
-                            fontSize   = 13.sp,
+                            fontSize   = 16.sp,
                             maxLines   = 2,
                             overflow   = TextOverflow.Ellipsis,
                             color      = onCard,
@@ -152,7 +189,7 @@ fun NoteCard(
                                 tint = onCardAccent,
                                 modifier = Modifier.size(12.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("Locked", fontSize = 11.sp, color = onCardVariant)
+                            Text("Locked", fontSize = 13.sp, color = onCardVariant)
                         }
                     } else if (checklistItems.isNotEmpty()) {
                         Column {
@@ -167,7 +204,7 @@ fun NoteCard(
                                     Spacer(Modifier.width(6.dp))
                                     Text(
                                         text          = item.text,
-                                        fontSize      = 11.sp,
+                                        fontSize      = 13.sp,
                                         color         = if (item.isCompleted) onCardVariant else onCard,
                                         textDecoration = if (item.isCompleted) TextDecoration.LineThrough else null,
                                         maxLines      = 1,
@@ -178,7 +215,7 @@ fun NoteCard(
                             if (checklistItems.size > 3) {
                                 Text(
                                     text     = "+${checklistItems.size - 3} nữa",
-                                    fontSize = 10.sp,
+                                    fontSize = 12.sp,
                                     color    = onCardVariant,
                                     modifier = Modifier.padding(top = 2.dp)
                                 )
@@ -187,11 +224,11 @@ fun NoteCard(
                     } else if (note.content.isNotBlank()) {
                         Text(
                             text       = note.content,
-                            fontSize   = 11.sp,
+                            fontSize   = 13.sp,
                             maxLines   = 6,
                             overflow   = TextOverflow.Ellipsis,
                             color      = onCard,
-                            lineHeight = 15.sp
+                            lineHeight = 18.sp
                         )
                     }
 
@@ -207,7 +244,7 @@ fun NoteCard(
                                         .background(pillBg, RoundedCornerShape(50))
                                         .padding(horizontal = 8.dp, vertical = 3.dp)
                                 ) {
-                                    Text(text = label, fontSize = 9.sp, color = Color.White, maxLines = 1)
+                                    Text(text = label, fontSize = 11.sp, color = Color.White, maxLines = 1)
                                 }
                             }
                         }
@@ -216,7 +253,7 @@ fun NoteCard(
                     Spacer(Modifier.height(6.dp))
                     Text(
                         text     = dateText,
-                        fontSize = 10.sp,
+                        fontSize = 12.sp,
                         color    = onCardVariant
                     )
                 }
@@ -252,7 +289,8 @@ fun AnimatedNoteCard(
     onClick: () -> Unit = {},
     onShowActions: () -> Unit = {},
     isVisible: Boolean = true,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    tilted: Boolean = false
 ) {
     AnimatedVisibility(
         visible = isVisible,
@@ -265,7 +303,8 @@ fun AnimatedNoteCard(
             onLongPress   = onLongPress,
             onClick       = onClick,
             onShowActions = onShowActions,
-            modifier      = modifier
+            modifier      = modifier,
+            tilted        = tilted
         )
     }
 }

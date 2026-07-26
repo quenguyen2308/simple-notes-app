@@ -1,5 +1,6 @@
 package com.yourname.simplenotes
 
+import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
@@ -42,6 +43,8 @@ class MainActivity : AppCompatActivity() {
     /** "system" | "light" | "dark" — triggers recompose on change */
     private var themeMode by mutableStateOf("system")
     private var dynamicColorEnabled by mutableStateOf(true)
+    /** Text received via another app's share sheet (Samsung Notes, Easy Note, …), pending consumption. */
+    private var pendingSharedText by mutableStateOf<String?>(null)
 
     private val signInLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -90,6 +93,7 @@ class MainActivity : AppCompatActivity() {
         themeMode = settingsPrefs.themeMode
         dynamicColorEnabled = settingsPrefs.dynamicColorEnabled
         val requiresAuth = AuthPreferencesManager(this).isBiometricEnabled
+        handleIncomingIntent(intent)
 
         setContent {
             val systemDark = isSystemInDarkTheme()
@@ -105,7 +109,9 @@ class MainActivity : AppCompatActivity() {
                         activity = this@MainActivity,
                         requiresAuth = requiresAuth,
                         onThemeChange = { themeMode = it },
-                        onDynamicColorChange = { dynamicColorEnabled = it }
+                        onDynamicColorChange = { dynamicColorEnabled = it },
+                        sharedText = pendingSharedText,
+                        onSharedTextConsumed = { pendingSharedText = null }
                     )
                 } else {
                     SignInScreen(
@@ -115,5 +121,19 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    /** Warm-start share: activity is singleTask, so a repeat Share re-enters here instead of onCreate. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingIntent(intent)
+    }
+
+    /** Picks up plain-text shared from another app (e.g. Samsung Notes, Easy Note "Share"). */
+    private fun handleIncomingIntent(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_SEND || intent.type != "text/plain") return
+        val text = intent.getStringExtra(Intent.EXTRA_TEXT)?.takeIf { it.isNotBlank() } ?: return
+        pendingSharedText = text
     }
 }

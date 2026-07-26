@@ -1,5 +1,12 @@
 package com.yourname.simplenotes.ui.settings
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
+import android.provider.OpenableColumns
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -14,19 +21,55 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.yourname.simplenotes.BuildConfig
+import com.yourname.simplenotes.data.local.entities.ContentBlock
+import com.yourname.simplenotes.domain.model.Note
+import com.yourname.simplenotes.domain.model.NoteMetadata
+import com.yourname.simplenotes.sync.SyncScheduler
+import com.yourname.simplenotes.ui.editor.NoteColorPicker
+import com.yourname.simplenotes.ui.theme.isDynamicColorAvailable
+import com.yourname.simplenotes.util.toEditorHtml
+import java.util.UUID
 
-private val SamsungBlue = Color(0xFF1259C3)
+private const val SUPPORT_EMAIL = "quenguyen2308@gmail.com"
 
 @Composable
 fun SettingsScreen(
-    onThemeChange: (String) -> Unit = {}
+    onThemeChange: (String) -> Unit = {},
+    onDynamicColorChange: (Boolean) -> Unit = {},
+    onImportNotes: (List<Note>) -> Unit = {}
 ) {
     val context = LocalContext.current
     val prefs = remember { SettingsPrefs(context) }
+    val syncScheduler = remember { SyncScheduler(context) }
+    // Settings sync to Drive as a single settings.json (last-write-wins by updatedAt) — push
+    // right away instead of waiting for the next periodic/app-resume sync, mirroring notes/folders.
+    fun syncSettingsNow() = syncScheduler.triggerImmediateSync()
+
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        val notes = uris.mapNotNull { readImportedTextNote(context, it) }
+        if (notes.isNotEmpty()) {
+            onImportNotes(notes)
+            Toast.makeText(context, "Đã nhập ${notes.size} ghi chú", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, "Không đọc được nội dung file đã chọn", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     var themeMode     by remember { mutableStateOf(prefs.themeMode) }
     var notifEnabled  by remember { mutableStateOf(prefs.notificationsEnabled) }
+    var dynamicColorEnabled by remember { mutableStateOf(prefs.dynamicColorEnabled) }
+    var autoSaveEnabled by remember { mutableStateOf(prefs.autoSaveEnabled) }
+    var lockMethod    by remember { mutableStateOf(prefs.noteLockMethod) }
+    var defaultBg     by remember { mutableStateOf(prefs.defaultNoteBackground) }
+    var showLinksEnabled by remember { mutableStateOf(prefs.showLinksEnabled) }
+    var hideScrollbarEnabled by remember { mutableStateOf(prefs.hideScrollbarEnabled) }
     var showThemeDialog by remember { mutableStateOf(false) }
+    var showLockMethodDialog by remember { mutableStateOf(false) }
+    var showPageStyleDialog by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -63,6 +106,28 @@ fun SettingsScreen(
                 },
                 onClick = { showThemeDialog = true }
             )
+            if (isDynamicColorAvailable) {
+                RowDivider()
+                PlainRow(
+                    title = "Màu động theo hình nền",
+                    subtitle = "Material You — lấy màu từ hình nền thiết bị",
+                    trailing = {
+                        Switch(
+                            checked = dynamicColorEnabled,
+                            onCheckedChange = {
+                                dynamicColorEnabled = it
+                                prefs.dynamicColorEnabled = it
+                                onDynamicColorChange(it)
+                                syncSettingsNow()
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = MaterialTheme.colorScheme.primary
+                            )
+                        )
+                    }
+                )
+            }
         }
 
         Spacer(Modifier.height(8.dp))
@@ -72,19 +137,33 @@ fun SettingsScreen(
         SettingsGroup {
             PlainRow(
                 title = "Tự động lưu ghi chú",
+                subtitle = "Lưu ghi chú khi rời khỏi màn hình chỉnh sửa",
                 trailing = {
-                    Text("Bật", fontSize = 13.sp, color = SamsungBlue)
+                    Switch(
+                        checked = autoSaveEnabled,
+                        onCheckedChange = {
+                            autoSaveEnabled = it
+                            prefs.autoSaveEnabled = it
+                            syncSettingsNow()
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = MaterialTheme.colorScheme.primary
+                        )
+                    )
                 }
             )
             RowDivider()
             PlainRow(
                 title = "Phương thức khóa ghi chú",
-                onClick = {}
+                subtitle = if (lockMethod == "pin") "Mã PIN" else "Sinh trắc học (vân tay/khuôn mặt)",
+                onClick = { showLockMethodDialog = true }
             )
             RowDivider()
             PlainRow(
                 title = "Kiểu trang và mẫu",
-                onClick = {}
+                subtitle = "Màu nền mặc định cho ghi chú mới",
+                onClick = { showPageStyleDialog = true }
             )
         }
 
@@ -116,10 +195,11 @@ fun SettingsScreen(
                     onCheckedChange = {
                         notifEnabled = it
                         prefs.notificationsEnabled = it
+                        syncSettingsNow()
                     },
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = Color.White,
-                        checkedTrackColor = SamsungBlue
+                        checkedTrackColor = MaterialTheme.colorScheme.primary
                     )
                 )
             }
@@ -132,22 +212,30 @@ fun SettingsScreen(
         SettingsGroup {
             PlainRow(title = "Hiển thị liên kết trong ghi chú", trailing = {
                 Switch(
-                    checked = true,
-                    onCheckedChange = {},
+                    checked = showLinksEnabled,
+                    onCheckedChange = {
+                        showLinksEnabled = it
+                        prefs.showLinksEnabled = it
+                        syncSettingsNow()
+                    },
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = Color.White,
-                        checkedTrackColor = SamsungBlue
+                        checkedTrackColor = MaterialTheme.colorScheme.primary
                     )
                 )
             })
             RowDivider()
             PlainRow(title = "Ẩn thanh cuộn khi chỉnh sửa", trailing = {
                 Switch(
-                    checked = false,
-                    onCheckedChange = {},
+                    checked = hideScrollbarEnabled,
+                    onCheckedChange = {
+                        hideScrollbarEnabled = it
+                        prefs.hideScrollbarEnabled = it
+                        syncSettingsNow()
+                    },
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = Color.White,
-                        checkedTrackColor = SamsungBlue
+                        checkedTrackColor = MaterialTheme.colorScheme.primary
                     )
                 )
             })
@@ -155,14 +243,57 @@ fun SettingsScreen(
 
         Spacer(Modifier.height(8.dp))
 
+        // ── Dữ liệu ───────────────────────────────────────────────────
+        SectionHeader("Dữ liệu")
+        SettingsGroup {
+            PlainRow(
+                title = "Nhập ghi chú từ file",
+                subtitle = "Chọn file .txt — ví dụ xuất/chia sẻ từ Samsung Notes, Easy Note",
+                onClick = { importLauncher.launch(arrayOf("text/plain")) }
+            )
+        }
+
+        Spacer(Modifier.height(8.dp))
+
         // ── Về ứng dụng ───────────────────────────────────────────────
         SectionHeader("Về ứng dụng")
         SettingsGroup {
-            PlainRow(title = "Phiên bản", subtitle = "1.0.0")
+            PlainRow(title = "Phiên bản", subtitle = BuildConfig.VERSION_NAME)
             RowDivider()
-            PlainRow(title = "Đánh giá ứng dụng", onClick = {})
+            PlainRow(
+                title = "Đánh giá ứng dụng",
+                onClick = {
+                    val packageName = context.packageName
+                    try {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName"))
+                        )
+                    } catch (e: ActivityNotFoundException) {
+                        context.startActivity(
+                            Intent(
+                                Intent.ACTION_VIEW,
+                                Uri.parse("https://play.google.com/store/apps/details?id=$packageName")
+                            )
+                        )
+                    }
+                }
+            )
             RowDivider()
-            PlainRow(title = "Liên hệ hỗ trợ", onClick = {})
+            PlainRow(
+                title = "Liên hệ hỗ trợ",
+                onClick = {
+                    val intent = Intent(Intent.ACTION_SENDTO).apply {
+                        data = Uri.parse("mailto:")
+                        putExtra(Intent.EXTRA_EMAIL, arrayOf(SUPPORT_EMAIL))
+                        putExtra(Intent.EXTRA_SUBJECT, "Hỗ trợ Simple Notes")
+                    }
+                    try {
+                        context.startActivity(intent)
+                    } catch (e: ActivityNotFoundException) {
+                        // No email client installed — silently ignore
+                    }
+                }
+            )
         }
 
         Spacer(Modifier.height(32.dp))
@@ -183,6 +314,7 @@ fun SettingsScreen(
                                     themeMode = mode
                                     prefs.themeMode = mode
                                     onThemeChange(mode)
+                                    syncSettingsNow()
                                     showThemeDialog = false
                                 }
                                 .padding(vertical = 12.dp, horizontal = 4.dp),
@@ -194,9 +326,10 @@ fun SettingsScreen(
                                     themeMode = mode
                                     prefs.themeMode = mode
                                     onThemeChange(mode)
+                                    syncSettingsNow()
                                     showThemeDialog = false
                                 },
-                                colors = RadioButtonDefaults.colors(selectedColor = SamsungBlue)
+                                colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary)
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(label, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)
@@ -209,9 +342,104 @@ fun SettingsScreen(
             }
         )
     }
+
+    // ── Note lock method dialog ─────────────────────────────────────────
+    if (showLockMethodDialog) {
+        AlertDialog(
+            onDismissRequest = { showLockMethodDialog = false },
+            title = { Text("Phương thức khóa ghi chú") },
+            text = {
+                Column {
+                    listOf("biometric" to "Sinh trắc học (vân tay/khuôn mặt)", "pin" to "Mã PIN").forEach { (method, label) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    lockMethod = method
+                                    prefs.noteLockMethod = method
+                                    syncSettingsNow()
+                                    showLockMethodDialog = false
+                                }
+                                .padding(vertical = 12.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = lockMethod == method,
+                                onClick = {
+                                    lockMethod = method
+                                    prefs.noteLockMethod = method
+                                    syncSettingsNow()
+                                    showLockMethodDialog = false
+                                },
+                                colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(label, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showLockMethodDialog = false }) { Text("Đóng") }
+            }
+        )
+    }
+
+    // ── Page style / default background dialog ─────────────────────────
+    if (showPageStyleDialog) {
+        AlertDialog(
+            onDismissRequest = { showPageStyleDialog = false },
+            title = { Text("Kiểu trang và mẫu") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "Màu nền mặc định cho ghi chú mới",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    NoteColorPicker(
+                        selectedColor = defaultBg,
+                        onColorSelected = {
+                            defaultBg = it
+                            prefs.defaultNoteBackground = it
+                            syncSettingsNow()
+                        }
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showPageStyleDialog = false }) { Text("Đóng") }
+            }
+        )
+    }
 }
 
 // ── Private helpers ───────────────────────────────────────────────────────────
+
+/** Reads a picked text file into a new [Note] (title = filename, falling back to its first line). */
+private fun readImportedTextNote(context: android.content.Context, uri: Uri): Note? {
+    val text = runCatching {
+        context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+    }.getOrNull()?.trim()
+    if (text.isNullOrBlank()) return null
+
+    val displayName = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+        ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+    val title = displayName?.substringBeforeLast(".")?.take(80)?.takeIf { it.isNotBlank() }
+        ?: text.lineSequence().firstOrNull { it.isNotBlank() }?.take(80)
+        ?: "Ghi chú đã nhập"
+
+    val now = System.currentTimeMillis()
+    return Note(
+        id = UUID.randomUUID().toString(),
+        title = title,
+        contentBlocks = listOf(ContentBlock.Text(text = text, htmlContent = text.toEditorHtml())),
+        createdAt = now,
+        updatedAt = now,
+        metadata = NoteMetadata.from(text),
+        isDirty = true
+    )
+}
 
 @Composable
 private fun SectionHeader(text: String) {

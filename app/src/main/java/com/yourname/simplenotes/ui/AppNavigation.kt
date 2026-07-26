@@ -1,6 +1,8 @@
 package com.yourname.simplenotes.ui
 
+import android.net.Uri
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.fragment.app.FragmentActivity
@@ -20,7 +22,7 @@ import com.yourname.simplenotes.ui.search.SearchScreen
 
 // Route constants for the main graph
 private const val ROUTE_LIST = "list"
-private const val ROUTE_EDITOR = "editor/{noteId}?categoryId={categoryId}"
+private const val ROUTE_EDITOR = "editor/{noteId}?categoryId={categoryId}&sharedText={sharedText}"
 private const val ROUTE_EDITOR_PREFIX = "editor"
 private const val ROUTE_SEARCH = "search"
 
@@ -40,6 +42,10 @@ fun AppNavigation(
     activity: FragmentActivity,
     requiresAuth: Boolean = false,
     onThemeChange: (String) -> Unit = {},
+    onDynamicColorChange: (Boolean) -> Unit = {},
+    /** Text received via another app's share sheet (e.g. Samsung Notes, Easy Note), if any. */
+    sharedText: String? = null,
+    onSharedTextConsumed: () -> Unit = {},
     navController: NavHostController = rememberNavController()
 ) {
     val startDestination = if (requiresAuth) AuthNavigation.ROUTE_AUTH else ROUTE_LIST
@@ -84,6 +90,15 @@ fun AppNavigation(
 
         // --- Main app routes ---
         composable(ROUTE_LIST) {
+            // Reached on first launch (no auth) or right after unlocking, so this is the one
+            // place both cold- and warm-start shares land — jump straight into a prefilled
+            // new note, then clear the pending text so rotation/back-nav doesn't refire it.
+            LaunchedEffect(sharedText) {
+                if (!sharedText.isNullOrBlank()) {
+                    navController.navigate("$ROUTE_EDITOR_PREFIX/new?sharedText=${Uri.encode(sharedText)}")
+                    onSharedTextConsumed()
+                }
+            }
             NoteListScreen(
                 onNoteClick = { id -> navController.navigate("$ROUTE_EDITOR_PREFIX/$id") },
                 onNewNote = { categoryId ->
@@ -94,7 +109,8 @@ fun AppNavigation(
                     navController.navigate(route)
                 },
                 onSearchClick = { navController.navigate(ROUTE_SEARCH) },
-                onThemeChange = onThemeChange
+                onThemeChange = onThemeChange,
+                onDynamicColorChange = onDynamicColorChange
             )
         }
 
@@ -113,14 +129,17 @@ fun AppNavigation(
             route = ROUTE_EDITOR,
             arguments = listOf(
                 navArgument("noteId") { type = NavType.StringType },
-                navArgument("categoryId") { type = NavType.StringType; nullable = true; defaultValue = null }
+                navArgument("categoryId") { type = NavType.StringType; nullable = true; defaultValue = null },
+                navArgument("sharedText") { type = NavType.StringType; nullable = true; defaultValue = null }
             )
         ) { backStackEntry ->
             val noteId = backStackEntry.arguments?.getString("noteId")
             val categoryId = backStackEntry.arguments?.getString("categoryId")
+            val sharedTextArg = backStackEntry.arguments?.getString("sharedText")
             NoteEditorScreen(
                 noteId = noteId,
                 initialCategoryId = categoryId,
+                sharedText = sharedTextArg,
                 onBack = { navController.popBackStack() }
             )
         }

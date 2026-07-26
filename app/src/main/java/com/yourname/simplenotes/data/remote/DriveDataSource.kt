@@ -4,6 +4,7 @@ import com.google.api.client.http.ByteArrayContent
 import com.google.api.services.drive.Drive
 import com.yourname.simplenotes.domain.model.Category
 import com.yourname.simplenotes.domain.model.Note
+import com.yourname.simplenotes.domain.model.SettingsSnapshot
 import com.yourname.simplenotes.domain.model.fromJson
 import com.yourname.simplenotes.domain.model.toJson
 import kotlinx.coroutines.Dispatchers
@@ -17,7 +18,10 @@ import org.json.JSONObject
  * Drive storage layout:
  *   appdata/
  *   ├── index.json          — {noteId: driveModifiedTime} map for fast conflict detection
- *   └── note_<uuid>.json    — one file per note
+ *   ├── note_<uuid>.json    — one file per note
+ *   ├── deleted_notes.json  — { deletedIds: [...] } — persistent tombstones, never shrinks
+ *   ├── categories.json     — { categories: [...], deletedIds: [...] }
+ *   └── settings.json       — single SettingsSnapshot object (last-write-wins via updatedAt)
  */
 class DriveDataSource(private val authManager: DriveAuthManager) {
 
@@ -129,6 +133,7 @@ class DriveDataSource(private val authManager: DriveAuthManager) {
                             put("colorArgb", cat.colorArgb)
                             put("parentId", cat.parentId ?: JSONObject.NULL)
                             put("order", cat.order)
+                            put("updatedAt", cat.updatedAt)
                         })
                     }
                 })
@@ -188,6 +193,58 @@ class DriveDataSource(private val authManager: DriveAuthManager) {
         }
     }
 
+    /** Uploads the app settings as a single `settings.json` (one object, not a per-item collection). */
+    suspend fun uploadSettings(snapshot: SettingsSnapshot) = withContext(Dispatchers.IO) {
+        val drive = drive() ?: return@withContext
+        runCatching {
+            val json = JSONObject().apply {
+                put("themeMode", snapshot.themeMode)
+                put("notificationsEnabled", snapshot.notificationsEnabled)
+                put("dynamicColorEnabled", snapshot.dynamicColorEnabled)
+                put("noteViewType", snapshot.noteViewType)
+                put("autoSaveEnabled", snapshot.autoSaveEnabled)
+                put("noteLockMethod", snapshot.noteLockMethod)
+                put("defaultNoteBackground", snapshot.defaultNoteBackground)
+                put("showLinksEnabled", snapshot.showLinksEnabled)
+                put("hideScrollbarEnabled", snapshot.hideScrollbarEnabled)
+                put("updatedAt", snapshot.updatedAt)
+            }.toString()
+
+            val content = ByteArrayContent("application/json", json.toByteArray())
+            val metadata = com.google.api.services.drive.model.File().setName("settings.json")
+            val existingId = findFileId(drive, "settings.json")
+            if (existingId != null) {
+                drive.files().update(existingId, metadata, content).execute()
+            } else {
+                metadata.setParents(listOf("appDataFolder"))
+                drive.files().create(metadata, content).execute()
+            }
+        }
+    }
+
+    /** Returns the Drive settings snapshot, or null if not signed in / no settings uploaded yet. */
+    suspend fun downloadSettings(): SettingsSnapshot? = withContext(Dispatchers.IO) {
+        val drive = drive() ?: return@withContext null
+        val fileId = findFileId(drive, "settings.json") ?: return@withContext null
+        runCatching {
+            val json = drive.files().get(fileId)
+                .executeMediaAsInputStream().bufferedReader().readText()
+            val obj = JSONObject(json)
+            SettingsSnapshot(
+                themeMode = obj.optString("themeMode", "system"),
+                notificationsEnabled = obj.optBoolean("notificationsEnabled", true),
+                dynamicColorEnabled = obj.optBoolean("dynamicColorEnabled", true),
+                noteViewType = obj.optString("noteViewType", "LIST"),
+                autoSaveEnabled = obj.optBoolean("autoSaveEnabled", true),
+                noteLockMethod = obj.optString("noteLockMethod", "biometric"),
+                defaultNoteBackground = obj.optInt("defaultNoteBackground", 0xFFFFFFFF.toInt()),
+                showLinksEnabled = obj.optBoolean("showLinksEnabled", true),
+                hideScrollbarEnabled = obj.optBoolean("hideScrollbarEnabled", false),
+                updatedAt = obj.optLong("updatedAt", 0L)
+            )
+        }.getOrNull()
+    }
+
     /** Deletes a note file from Drive after its tombstone has been synced to all devices. */
     suspend fun deleteNote(noteId: String) = withContext(Dispatchers.IO) {
         val drive = drive() ?: return@withContext
@@ -197,12 +254,47 @@ class DriveDataSource(private val authManager: DriveAuthManager) {
         }
     }
 
+    /**
+     * Uploads the persistent set of permanently-deleted note IDs (never shrinks). Unlike
+     * index.json — where a purged note simply disappears with no trace — this survives so a
+     * device that missed the intermediate soft-delete (e.g. was offline while another device
+     * both deleted the note AND emptied the trash) still learns the note is gone instead of
+     * keeping it forever. Mirrors categories.json's `deletedIds` field.
+     */
+    suspend fun uploadDeletedNoteIds(ids: Set<String>) = withContext(Dispatchers.IO) {
+        val drive = drive() ?: return@withContext
+        runCatching {
+            val json = JSONObject().apply { put("deletedIds", JSONArray(ids.toList())) }.toString()
+            val content = ByteArrayContent("application/json", json.toByteArray())
+            val metadata = com.google.api.services.drive.model.File().setName("deleted_notes.json")
+            val existingId = findFileId(drive, "deleted_notes.json")
+            if (existingId != null) {
+                drive.files().update(existingId, metadata, content).execute()
+            } else {
+                metadata.setParents(listOf("appDataFolder"))
+                drive.files().create(metadata, content).execute()
+            }
+        }
+    }
+
+    /** Downloads the persistent set of permanently-deleted note IDs. Empty if never uploaded. */
+    suspend fun downloadDeletedNoteIds(): Set<String> = withContext(Dispatchers.IO) {
+        val drive = drive() ?: return@withContext emptySet()
+        val fileId = findFileId(drive, "deleted_notes.json") ?: return@withContext emptySet()
+        runCatching {
+            val json = drive.files().get(fileId).executeMediaAsInputStream().bufferedReader().readText()
+            val array = JSONObject(json).optJSONArray("deletedIds") ?: JSONArray()
+            (0 until array.length()).map { array.getString(it) }.toSet()
+        }.getOrDefault(emptySet())
+    }
+
     private fun JSONObject.toCategory() = Category(
         id = getString("id"),
         name = getString("name"),
         colorArgb = getInt("colorArgb"),
         parentId = optString("parentId").takeIf { it.isNotEmpty() && it != "null" },
-        order = getInt("order")
+        order = getInt("order"),
+        updatedAt = optLong("updatedAt", 0L)
     )
 
     private fun findFileId(drive: Drive, filename: String): String? =

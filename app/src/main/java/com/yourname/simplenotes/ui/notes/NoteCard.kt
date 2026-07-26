@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
@@ -20,8 +21,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
@@ -31,15 +33,21 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.yourname.simplenotes.data.local.entities.ContentBlock
 import com.yourname.simplenotes.domain.model.Note
 import java.text.SimpleDateFormat
@@ -64,65 +72,190 @@ fun NoteCard(
     onLongPress: () -> Unit = {},
     onClick: () -> Unit = {},
     onShowActions: () -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** "Bàn Làm Việc" sticky-note look: a small stable per-note tilt plus a flat, hard-edged
+     *  paper shadow instead of Material's soft blurred elevation. */
+    tilted: Boolean = false
 ) {
-    val dateText = remember(note.updatedAt) { formatCardDate(note.updatedAt) }
+    val dateText = remember(note.contentUpdatedAt) { formatCardDate(note.contentUpdatedAt) }
+
+    // Stable per-note tilt derived from the note's own id, so it doesn't reshuffle on every
+    // recomposition/scroll — same note always leans the same way, like a real note that's been
+    // pressed onto the desk once.
+    val tiltDeg = remember(note.id, tilted) {
+        if (!tilted) 0f
+        else {
+            val h = ((note.id.hashCode() % 10_000) + 10_000) % 10_000
+            (h / 10_000f) * 4.4f - 2.2f // roughly -2.2°..+2.2°
+        }
+    }
 
     val noteBackgroundColor = remember(note.backgroundColor) {
         val argb = note.backgroundColor
         if (argb == 0xFFFFFFFF.toInt() || argb == 0) null else Color(argb)
     }
-    val checklistCount = remember(note.contentBlocks) {
-        note.contentBlocks.filterIsInstance<ContentBlock.Checklist>().sumOf { it.items.size }
+    // Pastel note colors are fixed light hues regardless of app theme, so text on a
+    // custom-colored card always uses dark text — MaterialTheme.colorScheme.onSurface
+    // would turn near-white in dark mode and become unreadable on a light pastel card.
+    val onCard        = if (noteBackgroundColor != null) Color(0xFF1B1B1B) else MaterialTheme.colorScheme.onSurface
+    val onCardVariant = if (noteBackgroundColor != null) Color(0xFF1B1B1B).copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant
+    val onCardAccent  = if (noteBackgroundColor != null) onCard else MaterialTheme.colorScheme.primary
+    val checklistItems = remember(note.contentBlocks) {
+        note.contentBlocks.filterIsInstance<ContentBlock.Checklist>()
+            .flatMap { it.items }
+            .sortedBy { it.order }
     }
-    val hasImages = remember(note.contentBlocks) {
-        note.contentBlocks.any { it is ContentBlock.Image }
+    val thumbnailUri = remember(note.contentBlocks) {
+        note.contentBlocks.filterIsInstance<ContentBlock.Image>().firstOrNull()?.uri
     }
 
-    Column(modifier = modifier) {
+    Box(
+        modifier = modifier.then(
+            if (tiltDeg != 0f) Modifier.graphicsLayer(rotationZ = tiltDeg) else Modifier
+        )
+    ) {
+        // ── Hard, flat paper shadow (only when tilted) — a solid offset copy of the card's
+        // shape instead of Material's soft blurred elevation, like a cut-out sticky note. ──
+        if (tilted) {
+            val shadowColor = remember(noteBackgroundColor) {
+                (noteBackgroundColor ?: Color(0xFFBEB6A8)).darken(0.4f)
+            }
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .offset(x = 3.dp, y = 4.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(shadowColor)
+            )
+        }
+
         // ── Card box: content only ───────────────────────────────────
         Card(
             modifier  = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 80.dp)
                 .then(
-                    if (isSelected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
+                    if (isSelected) Modifier.border(2.dp, onCardAccent, RoundedCornerShape(18.dp))
                     else Modifier
                 )
                 .combinedClickable(onClick = onClick, onLongClick = onLongPress),
-            shape     = RoundedCornerShape(12.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 4.dp else 2.dp),
+            shape     = RoundedCornerShape(18.dp),
+            elevation = CardDefaults.cardElevation(
+                defaultElevation = if (tilted) 0.dp else if (isSelected) 6.dp else 3.dp
+            ),
             colors    = CardDefaults.cardColors(
-                containerColor = noteBackgroundColor ?: Color.White
+                containerColor = noteBackgroundColor ?: MaterialTheme.colorScheme.surfaceVariant
             )
         ) {
             Box {
                 Column(modifier = Modifier.padding(10.dp).fillMaxWidth()) {
+                    // ── Thumbnail (first attached image, if any) ──────
+                    if (thumbnailUri != null) {
+                        AsyncImage(
+                            model             = thumbnailUri,
+                            contentDescription = null,
+                            contentScale      = ContentScale.Crop,
+                            modifier          = Modifier
+                                .fillMaxWidth()
+                                .height(96.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                        )
+                        Spacer(Modifier.height(8.dp))
+                    }
+
+                    // ── Title row ─────────────────────────────────────
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text       = note.title.ifBlank { "Untitled" },
+                            fontWeight = FontWeight.Bold,
+                            fontSize   = 16.sp,
+                            maxLines   = 2,
+                            overflow   = TextOverflow.Ellipsis,
+                            color      = onCard,
+                            modifier   = Modifier.weight(1f).padding(end = 24.dp)
+                        )
+                        if (note.isPinned) {
+                            Icon(Icons.Default.PushPin, null,
+                                tint = onCardAccent,
+                                modifier = Modifier.size(11.dp))
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+
+                    // ── Excerpt / checklist count / locked state ──────
                     if (note.isLocked) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.Lock, null,
-                                tint = MaterialTheme.colorScheme.primary,
+                                tint = onCardAccent,
                                 modifier = Modifier.size(12.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("Locked", fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Locked", fontSize = 13.sp, color = onCardVariant)
                         }
-                    } else if (checklistCount > 0) {
-                        Text(
-                            text = "$checklistCount item${if (checklistCount != 1) "s" else ""}",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    } else if (checklistItems.isNotEmpty()) {
+                        Column {
+                            checklistItems.take(3).forEach { item ->
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        if (item.isCompleted) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
+                                        contentDescription = null,
+                                        tint     = onCardVariant,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        text          = item.text,
+                                        fontSize      = 13.sp,
+                                        color         = if (item.isCompleted) onCardVariant else onCard,
+                                        textDecoration = if (item.isCompleted) TextDecoration.LineThrough else null,
+                                        maxLines      = 1,
+                                        overflow      = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                            if (checklistItems.size > 3) {
+                                Text(
+                                    text     = "+${checklistItems.size - 3} nữa",
+                                    fontSize = 12.sp,
+                                    color    = onCardVariant,
+                                    modifier = Modifier.padding(top = 2.dp)
+                                )
+                            }
+                        }
                     } else if (note.content.isNotBlank()) {
                         Text(
                             text       = note.content,
-                            fontSize   = 11.sp,
+                            fontSize   = 13.sp,
                             maxLines   = 6,
                             overflow   = TextOverflow.Ellipsis,
-                            color      = MaterialTheme.colorScheme.onSurface,
-                            lineHeight = 15.sp
+                            color      = onCard,
+                            lineHeight = 18.sp
                         )
                     }
+
+                    // ── Tag pills ──────────────────────────────────────
+                    if (note.labels.isNotEmpty()) {
+                        Spacer(Modifier.height(6.dp))
+                        val pillBg = if (noteBackgroundColor != null) noteBackgroundColor.darken(0.28f) else MaterialTheme.colorScheme.primary
+                        Row {
+                            note.labels.take(2).forEach { label ->
+                                Box(
+                                    modifier = Modifier
+                                        .padding(end = 4.dp)
+                                        .background(pillBg, RoundedCornerShape(50))
+                                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                                ) {
+                                    Text(text = label, fontSize = 11.sp, color = Color.White, maxLines = 1)
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text     = dateText,
+                        fontSize = 12.sp,
+                        color    = onCardVariant
+                    )
                 }
 
                 // ── ⋮ button overlay (top-right) ────────────────────
@@ -132,61 +265,19 @@ fun NoteCard(
                 ) {
                     Icon(Icons.Default.MoreVert, "More",
                         modifier = Modifier.size(14.dp),
-                        tint     = MaterialTheme.colorScheme.onSurfaceVariant)
+                        tint     = onCardVariant)
                 }
 
                 // ── Selection indicator (top-left) ───────────────────
                 if (isSelected) {
                     Icon(
                         Icons.Default.CheckCircle, "Selected",
-                        tint     = MaterialTheme.colorScheme.primary,
+                        tint     = onCardAccent,
                         modifier = Modifier.size(18.dp).align(Alignment.TopStart).padding(start = 6.dp, top = 6.dp)
                     )
                 }
             }
         }
-
-        // ── Title + date below the card box ─────────────────────────
-        Spacer(Modifier.height(4.dp))
-        if (note.labels.isNotEmpty()) {
-            Row {
-                note.labels.take(2).forEach { label ->
-                    Text(
-                        text     = label,
-                        fontSize = 9.sp,
-                        color    = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(end = 4.dp)
-                    )
-                }
-            }
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text       = note.title.ifBlank { "Untitled" },
-                fontWeight = FontWeight.Bold,
-                fontSize   = 12.sp,
-                maxLines   = 2,
-                overflow   = TextOverflow.Ellipsis,
-                color      = MaterialTheme.colorScheme.onSurface,
-                modifier   = Modifier.weight(1f)
-            )
-            if (note.isPinned) {
-                Icon(Icons.Default.PushPin, null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(11.dp))
-            }
-            if (hasImages) {
-                Spacer(Modifier.width(2.dp))
-                Icon(Icons.Default.Image, null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(11.dp))
-            }
-        }
-        Text(
-            text     = dateText,
-            fontSize = 10.sp,
-            color    = MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 }
 
@@ -198,7 +289,8 @@ fun AnimatedNoteCard(
     onClick: () -> Unit = {},
     onShowActions: () -> Unit = {},
     isVisible: Boolean = true,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    tilted: Boolean = false
 ) {
     AnimatedVisibility(
         visible = isVisible,
@@ -211,7 +303,8 @@ fun AnimatedNoteCard(
             onLongPress   = onLongPress,
             onClick       = onClick,
             onShowActions = onShowActions,
-            modifier      = modifier
+            modifier      = modifier,
+            tilted        = tilted
         )
     }
 }

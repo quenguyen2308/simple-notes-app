@@ -22,6 +22,7 @@ fun NoteEntity.toDomain() = Note(
         .getOrDefault(emptyList()),
     createdAt = createdAt,
     updatedAt = updatedAt,
+    contentUpdatedAt = contentUpdatedAt,
     metadata = runCatching { gson.fromJson(metadataJson, NoteMetadata::class.java) }
         .getOrDefault(NoteMetadata.EMPTY),
     isDirty = isDirty,
@@ -44,6 +45,7 @@ fun Note.toEntity(): NoteEntity {
         metadataJson = gson.toJson(freshMetadata),
         createdAt = createdAt,
         updatedAt = updatedAt,
+        contentUpdatedAt = contentUpdatedAt,
         isDirty = isDirty,
         isDeleted = isDeleted,
         isLocked = isLocked,

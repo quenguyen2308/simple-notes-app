@@ -3,6 +3,7 @@ package com.yourname.simplenotes.data.repository
 import com.yourname.simplenotes.data.local.NoteDao
 import com.yourname.simplenotes.data.local.NoteSearchDao
 import com.yourname.simplenotes.data.local.NoteSearchEntity
+import com.yourname.simplenotes.data.local.NoteSyncPrefs
 import com.yourname.simplenotes.data.local.entities.ContentBlock
 import com.yourname.simplenotes.data.local.toDomain
 import com.yourname.simplenotes.data.local.toEntity
@@ -14,7 +15,8 @@ import kotlinx.coroutines.flow.map
 class NoteRepositoryImpl(
     private val dao: NoteDao,
     private val syncScheduler: SyncScheduler,
-    private val noteSearchDao: NoteSearchDao
+    private val noteSearchDao: NoteSearchDao,
+    private val noteSyncPrefs: NoteSyncPrefs
 ) : NoteRepository {
 
     override fun observeAll(): Flow<List<Note>> =
@@ -75,15 +77,39 @@ class NoteRepositoryImpl(
     }
 
     override suspend fun permanentDelete(id: String) {
+        // Remember this ID so SyncWorker also deletes the note (and its Drive file) remotely —
+        // otherwise the next sync's download step sees "local == null, still in Drive index"
+        // and re-downloads the note, resurrecting it.
+        noteSyncPrefs.addDeletedId(id)
         dao.permanentDeleteById(id)
         noteSearchDao.deleteByNoteId(id)
+        syncScheduler.triggerImmediateSync()
     }
 
     override suspend fun purgeOldDeleted(cutoffMs: Long) {
         val ids = dao.getDeletedNoteIdsOlderThan(cutoffMs)
-        ids.forEach { noteSearchDao.deleteByNoteId(it) }
+        ids.forEach {
+            noteSyncPrefs.addDeletedId(it)
+            noteSearchDao.deleteByNoteId(it)
+        }
         dao.purgeOldDeletedNotes(cutoffMs)
     }
+
+    override suspend fun getPendingDeletedIds(): Set<String> = noteSyncPrefs.pendingDeletedIds
+
+    override suspend fun clearPendingDeletedIds() = noteSyncPrefs.clear()
+
+    override suspend fun getCleanDeletedNoteIds(): List<String> = dao.getCleanDeletedNoteIds()
+
+    override suspend fun purgeRemotelyDeleted(ids: List<String>) {
+        ids.forEach { id ->
+            dao.permanentDeleteById(id)
+            noteSearchDao.deleteByNoteId(id)
+        }
+    }
+
+    override suspend fun clearOrphanedFolderRefs(validFolderIds: Set<String>) =
+        dao.clearOrphanedFolderRefs(validFolderIds.toList())
 
     override suspend fun upsertFromRemote(notes: List<Note>) {
         val entities = notes.map { it.toEntity().copy(isDirty = false) }

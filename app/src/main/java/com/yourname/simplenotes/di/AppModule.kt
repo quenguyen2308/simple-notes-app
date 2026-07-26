@@ -2,6 +2,7 @@ package com.yourname.simplenotes.di
 
 import com.yourname.simplenotes.data.local.CategorySyncPrefs
 import com.yourname.simplenotes.data.local.NoteDatabase
+import com.yourname.simplenotes.data.local.NoteSyncPrefs
 import com.yourname.simplenotes.data.remote.DriveAuthManager
 import com.yourname.simplenotes.data.remote.DriveDataSource
 import com.yourname.simplenotes.data.repository.CategoryRepository
@@ -37,14 +38,15 @@ val appModule = module {
     single { SyncWorkerFactory(get(), get(), get()) }
 
     // --- Repositories ---
-    single<NoteRepository> { NoteRepositoryImpl(get(), get(), get()) }
+    single { NoteSyncPrefs(androidContext()) }
+    single<NoteRepository> { NoteRepositoryImpl(get(), get(), get(), get()) }
     single { CategorySyncPrefs(androidContext()) }
     single<CategoryRepository> { CategoryRepositoryImpl(get(), get(), get()) }
     single<SearchRepository> { SearchRepositoryImpl(get(), get(), get()) }
 
     // --- ViewModels ---
     viewModel { NoteListViewModel(get(), get(), get(), androidContext()) }
-    viewModel { NoteEditorViewModel(get(), get()) }
+    viewModel { NoteEditorViewModel(get(), get(), androidContext()) }
     viewModel { FolderViewModel(get(), get()) }
     viewModel { SearchViewModel(get(), get()) }
 }

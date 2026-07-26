@@ -8,5 +8,6 @@ data class Category(
     val parentId: String? = null,
     val order: Int = 0,
     val notesCount: Int = 0,
-    val subFolders: List<Category> = emptyList()
+    val subFolders: List<Category> = emptyList(),
+    val updatedAt: Long = 0L
 )

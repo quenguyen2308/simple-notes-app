@@ -71,7 +71,7 @@ fun NoteListItem(
     onLongPress: () -> Unit = {}
 ) {
     var showMenu by remember { mutableStateOf(false) }
-    val dateText = remember(note.updatedAt) { formatNoteDate(note.updatedAt) }
+    val dateText = remember(note.contentUpdatedAt) { formatNoteDate(note.contentUpdatedAt) }
 
     val selectionBackground = if (isSelected)
         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
@@ -143,7 +143,7 @@ fun NoteListItem(
 @Composable
 fun NoteGridItem(note: Note, onClick: () -> Unit, onDelete: () -> Unit) {
     var showMenu by remember { mutableStateOf(false) }
-    val dateText = remember(note.updatedAt) { formatNoteDate(note.updatedAt) }
+    val dateText = remember(note.contentUpdatedAt) { formatNoteDate(note.contentUpdatedAt) }
 
     Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
@@ -191,7 +191,7 @@ fun NoteGridItem(note: Note, onClick: () -> Unit, onDelete: () -> Unit) {
 @Composable
 fun NoteDetailItem(note: Note, onClick: () -> Unit, onDelete: () -> Unit) {
     var showMenu by remember { mutableStateOf(false) }
-    val dateText = remember(note.updatedAt) { formatNoteDate(note.updatedAt) }
+    val dateText = remember(note.contentUpdatedAt) { formatNoteDate(note.contentUpdatedAt) }
 
     Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),

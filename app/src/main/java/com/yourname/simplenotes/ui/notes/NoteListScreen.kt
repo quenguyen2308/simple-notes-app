@@ -11,10 +11,8 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -26,7 +24,13 @@ import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -37,6 +41,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -45,15 +51,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
+import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.yourname.simplenotes.domain.model.Category
 import com.yourname.simplenotes.domain.model.Note
 import com.yourname.simplenotes.ui.settings.SettingsScreen
+import com.yourname.simplenotes.ui.theme.FOLDER_COLOR_PALETTE
 import com.yourname.simplenotes.util.BiometricHelper
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
-
-private val SamsungBlue = Color(0xFF1259C3)
 
 private data class FolderNode(val category: Category, val children: List<FolderNode>)
 
@@ -72,6 +79,90 @@ enum class SortField(val label: String) {
     TITLE("Title")
 }
 
+/**
+ * 2-column masonry layout: notes are zig-zag assigned to columns by index,
+ * so each column's card heights vary naturally with content (no
+ * LazyVerticalStaggeredGrid available at the pinned Compose Foundation version).
+ */
+@Composable
+private fun MasonryNoteGrid(
+    notes: List<Note>,
+    selectedNotes: Set<String>,
+    onNoteClick: (Note) -> Unit,
+    onNoteLongPress: (Note) -> Unit,
+    onShowActions: (Note) -> Unit,
+    modifier: Modifier = Modifier,
+    columns: Int = 2
+) {
+    Row(
+        modifier              = modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        repeat(columns) { col ->
+            Column(
+                modifier            = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                notes.filterIndexed { i, _ -> i % columns == col }.forEach { note ->
+                    NoteCard(
+                        note          = note,
+                        isSelected    = selectedNotes.contains(note.id),
+                        onClick       = { onNoteClick(note) },
+                        onLongPress   = { onNoteLongPress(note) },
+                        onShowActions = { onShowActions(note) },
+                        tilted        = true
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * List-mode row: a colored dot in a left gutter, threaded together by a vertical line running
+ * through the whole list, next to the note card. [isFirst]/[isLast] trim the line so it starts
+ * and ends at the dot instead of overshooting into empty space above/below the list.
+ */
+@Composable
+private fun TimelineNoteRow(
+    note: Note,
+    isSelected: Boolean,
+    isFirst: Boolean,
+    isLast: Boolean,
+    onClick: () -> Unit,
+    onLongPress: () -> Unit,
+    onShowActions: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val dotColor = remember(note.backgroundColor) {
+        val argb = note.backgroundColor
+        if (argb == 0xFFFFFFFF.toInt() || argb == 0) null else Color(argb)
+    } ?: MaterialTheme.colorScheme.outline
+    val lineColor = MaterialTheme.colorScheme.outlineVariant
+
+    Row(modifier = modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+        Canvas(modifier = Modifier.width(28.dp).fillMaxHeight()) {
+            val centerX = size.width / 2f
+            val centerY = size.height / 2f
+            drawLine(
+                color       = lineColor,
+                start       = Offset(centerX, if (isFirst) centerY else 0f),
+                end         = Offset(centerX, if (isLast) centerY else size.height),
+                strokeWidth = 2.dp.toPx()
+            )
+            drawCircle(color = dotColor, radius = 5.dp.toPx(), center = Offset(centerX, centerY))
+        }
+        NoteCard(
+            note          = note,
+            isSelected    = isSelected,
+            onClick       = onClick,
+            onLongPress   = onLongPress,
+            onShowActions = onShowActions,
+            modifier      = Modifier.weight(1f).padding(top = 3.dp, end = 8.dp, bottom = 3.dp)
+        )
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NoteListScreen(
@@ -79,6 +170,7 @@ fun NoteListScreen(
     onNewNote: (String?) -> Unit,
     onSearchClick: () -> Unit = {},
     onThemeChange: (String) -> Unit = {},
+    onDynamicColorChange: (Boolean) -> Unit = {},
     viewModel: NoteListViewModel = koinViewModel()
 ) {
     val notes by viewModel.notes.collectAsStateWithLifecycle()
@@ -87,6 +179,10 @@ fun NoteListScreen(
     val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
     val viewType by viewModel.viewType.collectAsStateWithLifecycle()
     val deletedNotes by viewModel.deletedNotes.collectAsStateWithLifecycle()
+    val totalNoteCount by viewModel.totalNoteCount.collectAsStateWithLifecycle()
+    val allLabels by viewModel.allLabels.collectAsStateWithLifecycle()
+    val selectedLabel by viewModel.selectedLabel.collectAsStateWithLifecycle()
+    val pinnedOnly by viewModel.pinnedOnly.collectAsStateWithLifecycle()
 
     val pullRefreshState = rememberPullToRefreshState()
 
@@ -103,12 +199,15 @@ fun NoteListScreen(
         }
     }
     val context = LocalContext.current
+    val account = remember { GoogleSignIn.getLastSignedInAccount(context) }
+    val accountPhotoUrl = account?.photoUrl
 
-    var viewingFolderId by remember { mutableStateOf<String?>(null) }
+    var viewingFolderId by rememberSaveable { mutableStateOf<String?>(null) }
     var showSettings    by remember { mutableStateOf(false) }
     var showRecycleBin  by remember { mutableStateOf(false) }
-    var showSearchBar   by remember { mutableStateOf(false) }
     var searchQuery     by remember { mutableStateOf("") }
+    var showSearchBar   by remember { mutableStateOf(false) }
+    val searchFocusRequester = remember { FocusRequester() }
     var showMoreMenu    by remember { mutableStateOf(false) }
     var showCreateFolderDialog by remember { mutableStateOf(false) }
     var sortField       by remember { mutableStateOf(SortField.DATE_MODIFIED) }
@@ -120,22 +219,28 @@ fun NoteListScreen(
     var showBulkDeleteConfirm by remember { mutableStateOf(false) }
     var showNoPasscodeDialog  by remember { mutableStateOf(false) }
     var moveToFolderNote by remember { mutableStateOf<Note?>(null) }
+    var colorPickerNote  by remember { mutableStateOf<Note?>(null) }
     var folderToDelete   by remember { mutableStateOf<Category?>(null) }
+    var folderToEdit     by remember { mutableStateOf<Category?>(null) }
 
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
 
-    // Back: folder → home, settings/recycle bin → main
-    BackHandler(enabled = viewingFolderId != null || showSettings || showRecycleBin) {
+    // Back: recycle bin/settings → main, else search collapses before folder → home
+    BackHandler(enabled = showSearchBar || viewingFolderId != null || showSettings || showRecycleBin) {
         when {
             showRecycleBin -> showRecycleBin = false
+            showSettings -> showSettings = false
+            showSearchBar -> {
+                showSearchBar = false
+                searchQuery   = ""
+            }
             viewingFolderId != null -> {
                 viewingFolderId = null
                 isSelectionMode = false
                 selectedNotes   = emptySet()
                 searchQuery     = ""
             }
-            showSettings -> showSettings = false
         }
     }
 
@@ -147,7 +252,6 @@ fun NoteListScreen(
 
     // notes is unfiltered (selectedCategoryId stays null); we filter in UI
     val totalNotes       = notes.size
-    val lockedNotesCount = remember(notes) { notes.count { it.isLocked } }
     val currentFolder    = remember(viewingFolderId, categories) { categories.find { it.id == viewingFolderId } }
 
     val currentNotes = remember(notes, viewingFolderId, searchQuery, sortField, sortAscending) {
@@ -159,7 +263,7 @@ fun NoteListScreen(
                            it.content.contains(searchQuery, ignoreCase = true)
                        }
         val comparator: Comparator<Note> = when (sortField) {
-            SortField.DATE_MODIFIED -> compareBy { it.updatedAt }
+            SortField.DATE_MODIFIED -> compareBy { it.contentUpdatedAt }
             SortField.DATE_CREATED  -> compareBy { it.createdAt }
             SortField.TITLE         -> compareBy { it.title.lowercase() }
         }
@@ -191,96 +295,164 @@ fun NoteListScreen(
     ModalNavigationDrawer(
         drawerState   = drawerState,
         drawerContent = {
-            ModalDrawerSheet(modifier = Modifier.width(300.dp)) {
-                Spacer(Modifier.height(16.dp))
-                // Gear icon
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(end = 8.dp),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    IconButton(onClick = {
-                        showSettings = true
-                        scope.launch { drawerState.close() }
-                    }) {
-                        Icon(Icons.Default.Settings, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            ModalDrawerSheet(
+                drawerContainerColor = MaterialTheme.colorScheme.surface,
+                drawerShape          = RoundedCornerShape(topEnd = 16.dp, bottomEnd = 16.dp),
+                modifier             = Modifier.width(300.dp)
+            ) {
+                Column(Modifier.fillMaxSize().padding(16.dp)) {
+                    // ── Header: account avatar + name/email ─────────────
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(vertical = 24.dp)
+                    ) {
+                        if (accountPhotoUrl != null) {
+                            AsyncImage(
+                                model             = accountPhotoUrl,
+                                contentDescription = null,
+                                contentScale      = ContentScale.Crop,
+                                modifier          = Modifier.size(64.dp).clip(CircleShape)
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primaryContainer),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    (account?.displayName ?: "?").take(1).uppercase(),
+                                    fontSize   = 24.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color      = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(16.dp))
+                        Column {
+                            Text(
+                                account?.displayName ?: "Người dùng",
+                                fontSize   = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color      = MaterialTheme.colorScheme.onSurface
+                            )
+                            if (account?.email != null) {
+                                Text(
+                                    account.email!!,
+                                    fontSize = 14.sp,
+                                    color    = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
                     }
-                }
 
-                Spacer(Modifier.height(4.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Spacer(Modifier.height(16.dp))
 
-                // All notes
-                NavigationDrawerItem(
-                    icon   = { Icon(Icons.AutoMirrored.Filled.Notes, null) },
-                    label  = { Text("All notes") },
-                    badge  = { Text("$totalNotes", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp) },
-                    selected = false,
-                    onClick = { viewingFolderId = null; scope.launch { drawerState.close() } },
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-                NavigationDrawerItem(
-                    icon   = { Icon(Icons.Default.Lock, null) },
-                    label  = { Text("Locked notes") },
-                    badge  = { Text("$lockedNotesCount", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp) },
-                    selected = false,
-                    onClick = { scope.launch { drawerState.close() } },
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-                NavigationDrawerItem(
-                    icon   = { Icon(Icons.Default.Delete, null) },
-                    label  = { Text("Recycle bin") },
-                    badge  = if (deletedNotes.isNotEmpty()) {
-                        { Text("${deletedNotes.size}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp) }
-                    } else null,
-                    selected = showRecycleBin,
-                    onClick = {
-                        showRecycleBin = true
-                        scope.launch { drawerState.close() }
-                    },
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-
-                // Dotted separator
-                Spacer(Modifier.height(8.dp))
-                Canvas(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(1.dp)
-                        .padding(horizontal = 16.dp)
-                ) {
-                    drawLine(
-                        color       = Color.Gray.copy(alpha = 0.4f),
-                        start       = Offset(0f, 0f),
-                        end         = Offset(size.width, 0f),
-                        strokeWidth = 2f,
-                        pathEffect  = PathEffect.dashPathEffect(floatArrayOf(12f, 12f))
+                    // ── Main section: Ghi chú ────────────────────────────
+                    DrawerSectionLabel("Ghi chú")
+                    DrawerNavItem(
+                        icon     = Icons.AutoMirrored.Filled.Notes,
+                        label    = "Tất cả ghi chú",
+                        count    = totalNoteCount,
+                        selected = viewingFolderId == null && !pinnedOnly && selectedLabel == null,
+                        onClick  = {
+                            viewingFolderId = null
+                            viewModel.setPinnedOnly(false)
+                            viewModel.setLabelFilter(null)
+                            scope.launch { drawerState.close() }
+                        }
                     )
-                }
-                Spacer(Modifier.height(8.dp))
+                    DrawerNavItem(
+                        icon     = Icons.Default.PushPin,
+                        label    = "Đã ghim",
+                        selected = pinnedOnly,
+                        onClick  = {
+                            viewingFolderId = null
+                            viewModel.setPinnedOnly(true)
+                            viewModel.setLabelFilter(null)
+                            scope.launch { drawerState.close() }
+                        }
+                    )
 
-                // Folders section header
-                val totalFolderNotes = categories.sumOf { categoryCounts[it.id] ?: 0 }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 24.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Default.FolderOpen, null, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(16.dp))
-                    Text("Folders", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    Text("$totalFolderNotes", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                }
+                    Spacer(Modifier.height(16.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Spacer(Modifier.height(16.dp))
 
-                // Hierarchical folder list
-                val folderTree = remember(categories) { buildFolderTree(categories) }
-                folderTree.forEach { node ->
-                    FolderDrawerItem(
-                        node             = node,
-                        depth            = 0,
-                        categoryCounts   = categoryCounts,
-                        selectedFolderId = viewingFolderId,
-                        onFolderClick    = { id ->
-                            viewingFolderId = id
+                    // ── Tags section: Nhãn ────────────────────────────────
+                    if (allLabels.isNotEmpty()) {
+                        DrawerSectionLabel("Nhãn")
+                        allLabels.forEachIndexed { index, label ->
+                            DrawerTagItem(
+                                color    = DRAWER_TAG_COLORS[index % DRAWER_TAG_COLORS.size],
+                                label    = "#$label",
+                                selected = selectedLabel == label,
+                                onClick  = {
+                                    viewingFolderId = null
+                                    viewModel.setPinnedOnly(false)
+                                    viewModel.setLabelFilter(label)
+                                    scope.launch { drawerState.close() }
+                                }
+                            )
+                        }
+                        Spacer(Modifier.height(16.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Spacer(Modifier.height(16.dp))
+                    }
+
+                    // ── Folders section ───────────────────────────────────
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "THƯ MỤC", fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f)
+                        )
+                        DrawerCount(categories.size)
+                    }
+                    val folderTree = remember(categories) { buildFolderTree(categories) }
+                    folderTree.forEach { node ->
+                        FolderDrawerItem(
+                            node             = node,
+                            depth            = 0,
+                            categoryCounts   = categoryCounts,
+                            selectedFolderId = viewingFolderId,
+                            onFolderClick    = { id ->
+                                viewingFolderId = id
+                                viewModel.setPinnedOnly(false)
+                                viewModel.setLabelFilter(null)
+                                scope.launch { drawerState.close() }
+                            }
+                        )
+                    }
+
+                    Spacer(Modifier.weight(1f))
+
+                    // ── System section ────────────────────────────────────
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Spacer(Modifier.height(16.dp))
+                    DrawerNavItem(
+                        icon     = Icons.Default.Delete,
+                        label    = "Thùng rác",
+                        count    = deletedNotes.size.takeIf { it > 0 },
+                        selected = showRecycleBin,
+                        onClick  = {
+                            showRecycleBin = true
+                            scope.launch { drawerState.close() }
+                        }
+                    )
+                    DrawerNavItem(
+                        icon     = Icons.Default.Settings,
+                        label    = "Cài đặt",
+                        selected = showSettings,
+                        onClick  = {
+                            showSettings = true
                             scope.launch { drawerState.close() }
                         }
                     )
@@ -316,7 +488,11 @@ fun NoteListScreen(
                         modifier = Modifier.padding(start = 8.dp)
                     )
                 }
-                SettingsScreen(onThemeChange = onThemeChange)
+                SettingsScreen(
+                    onThemeChange = onThemeChange,
+                    onDynamicColorChange = onDynamicColorChange,
+                    onImportNotes = { viewModel.importNotes(it) }
+                )
             }
             return@ModalNavigationDrawer
         }
@@ -357,14 +533,26 @@ fun NoteListScreen(
             },
             floatingActionButton = {
                 if (!isSelectionMode) {
-                    FloatingActionButton(
-                        onClick        = { onNewNote(viewingFolderId) },
-                        containerColor = SamsungBlue,
-                        contentColor   = Color.White,
-                        shape          = CircleShape,
-                        modifier       = Modifier.size(48.dp)
-                    ) {
-                        Icon(Icons.Default.Edit, "Ghi chú mới", modifier = Modifier.size(22.dp))
+                    // "Bàn Làm Việc" sticky-note FAB: fixed tilt + flat hard shadow instead of
+                    // Material's soft blurred elevation, matching the note/folder cards.
+                    Box(modifier = Modifier.graphicsLayer(rotationZ = -4f)) {
+                        Box(
+                            Modifier
+                                .matchParentSize()
+                                .offset(x = 3.dp, y = 4.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(com.yourname.simplenotes.ui.theme.DeskCoralDark)
+                        )
+                        FloatingActionButton(
+                            onClick        = { onNewNote(viewingFolderId) },
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor   = MaterialTheme.colorScheme.onPrimary,
+                            shape          = RoundedCornerShape(16.dp),
+                            elevation      = FloatingActionButtonDefaults.elevation(defaultElevation = 0.dp),
+                            modifier       = Modifier.size(50.dp)
+                        ) {
+                            Icon(Icons.Default.Edit, "Ghi chú mới", modifier = Modifier.size(22.dp))
+                        }
                     }
                 }
             }
@@ -406,16 +594,15 @@ fun NoteListScreen(
                         Icon(Icons.Default.Menu, "Menu", tint = MaterialTheme.colorScheme.onBackground)
                     }
                     Spacer(Modifier.weight(1f))
-                    if (viewingFolderId != null) {
-                        IconButton(onClick = { /* export PDF – future */ }) {
-                            Icon(Icons.Default.Description, "Export PDF", tint = MaterialTheme.colorScheme.onBackground)
+                    IconButton(onClick = {
+                        if (showSearchBar) {
+                            showSearchBar = false
+                            searchQuery = ""
+                        } else {
+                            showSearchBar = true
                         }
-                    }
-                    IconButton(onClick = { showSearchBar = !showSearchBar; if (!showSearchBar) searchQuery = "" }) {
-                        Icon(
-                            Icons.Default.Search, "Search",
-                            tint = if (showSearchBar) SamsungBlue else MaterialTheme.colorScheme.onBackground
-                        )
+                    }) {
+                        Icon(Icons.Default.Search, "Tìm kiếm", tint = MaterialTheme.colorScheme.onBackground)
                     }
                     Box {
                         IconButton(onClick = { showMoreMenu = true }) {
@@ -435,25 +622,38 @@ fun NoteListScreen(
                             )
                             DropdownMenuItem(
                                 text    = { Text("Unpin favourites from top") },
-                                onClick = { showMoreMenu = false }
+                                onClick = {
+                                    viewModel.unpinNotes(currentNotes.filter { it.isPinned }.map { it.id })
+                                    showMoreMenu = false
+                                }
                             )
                         }
                     }
                 }
 
-                // ── Search bar ───────────────────────────────────────
+                // ── Search bar — collapsed to an icon until tapped, no avatar (Settings
+                // lives in the drawer) ────────────────────────────────────────────
                 if (showSearchBar) {
+                    val keyboardController = LocalSoftwareKeyboardController.current
+                    LaunchedEffect(Unit) {
+                        searchFocusRequester.requestFocus()
+                        keyboardController?.show()
+                    }
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 4.dp)
-                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(22.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(28.dp))
                             .padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(Icons.Default.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(8.dp))
-                        BasicSearchField(query = searchQuery, onQueryChange = { searchQuery = it }, modifier = Modifier.weight(1f))
+                        BasicSearchField(
+                            query         = searchQuery,
+                            onQueryChange = { searchQuery = it },
+                            modifier      = Modifier.weight(1f).focusRequester(searchFocusRequester)
+                        )
                         if (searchQuery.isNotEmpty()) {
                             Icon(
                                 Icons.Default.Close, null,
@@ -505,7 +705,7 @@ fun NoteListScreen(
                                     categoryCounts = categoryCounts,
                                     onFolderClick  = { id -> viewingFolderId = id },
                                     onFolderLongPress = { id ->
-                                        folderToDelete = categories.find { it.id == id }
+                                        folderToEdit = categories.find { it.id == id }
                                     }
                                 )
                             }
@@ -540,36 +740,28 @@ fun NoteListScreen(
                                 }
                             }
                         } else if (viewType == NoteViewType.GRID) {
-                            items(currentNotes.chunked(3)) { row ->
-                                Row(
-                                    modifier             = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    row.forEach { note ->
-                                        Box(Modifier.weight(1f)) {
-                                            NoteCard(
-                                                note     = note,
-                                                isSelected = selectedNotes.contains(note.id),
-                                                onClick  = {
-                                                    if (isSelectionMode) toggleSelection(note.id)
-                                                    else handleNoteClick(note.id)
-                                                },
-                                                onLongPress = {
-                                                    if (isSelectionMode) toggleSelection(note.id)
-                                                    else enterSelectionMode(note.id)
-                                                },
-                                                onShowActions = { bottomSheetNote = note }
-                                            )
-                                        }
-                                    }
-                                    repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
-                                }
+                            item {
+                                MasonryNoteGrid(
+                                    notes         = currentNotes,
+                                    selectedNotes = selectedNotes,
+                                    onNoteClick   = { note ->
+                                        if (isSelectionMode) toggleSelection(note.id)
+                                        else handleNoteClick(note.id)
+                                    },
+                                    onNoteLongPress = { note ->
+                                        if (isSelectionMode) toggleSelection(note.id)
+                                        else enterSelectionMode(note.id)
+                                    },
+                                    onShowActions = { note -> bottomSheetNote = note }
+                                )
                             }
                         } else {
-                            items(currentNotes, key = { it.id }) { note ->
-                                NoteCard(
-                                    note     = note,
+                            itemsIndexed(currentNotes, key = { _, it -> it.id }) { index, note ->
+                                TimelineNoteRow(
+                                    note       = note,
                                     isSelected = selectedNotes.contains(note.id),
+                                    isFirst    = index == 0,
+                                    isLast     = index == currentNotes.lastIndex,
                                     onClick  = {
                                         if (isSelectionMode) toggleSelection(note.id)
                                         else handleNoteClick(note.id)
@@ -579,7 +771,7 @@ fun NoteListScreen(
                                         else enterSelectionMode(note.id)
                                     },
                                     onShowActions = { bottomSheetNote = note },
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp)
+                                    modifier = Modifier.padding(horizontal = 8.dp)
                                 )
                             }
                         }
@@ -610,26 +802,20 @@ fun NoteListScreen(
                             )
                         }
                     } else if (viewType == NoteViewType.GRID) {
-                        LazyVerticalGrid(
-                            columns              = GridCells.Fixed(3),
-                            modifier             = Modifier.fillMaxSize(),
-                            contentPadding       = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalArrangement   = Arrangement.spacedBy(6.dp)
-                        ) {
-                            items(currentNotes, key = { it.id }) { note ->
-                                NoteCard(
-                                    note     = note,
-                                    isSelected = selectedNotes.contains(note.id),
-                                    onClick  = {
+                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            item {
+                                MasonryNoteGrid(
+                                    notes         = currentNotes,
+                                    selectedNotes = selectedNotes,
+                                    onNoteClick   = { note ->
                                         if (isSelectionMode) toggleSelection(note.id)
                                         else handleNoteClick(note.id)
                                     },
-                                    onLongPress = {
+                                    onNoteLongPress = { note ->
                                         if (isSelectionMode) toggleSelection(note.id)
                                         else enterSelectionMode(note.id)
                                     },
-                                    onShowActions = { bottomSheetNote = note }
+                                    onShowActions = { note -> bottomSheetNote = note }
                                 )
                             }
                         }
@@ -638,10 +824,12 @@ fun NoteListScreen(
                             modifier       = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(bottom = 80.dp)
                         ) {
-                            items(currentNotes, key = { it.id }) { note ->
-                                NoteCard(
-                                    note     = note,
+                            itemsIndexed(currentNotes, key = { _, it -> it.id }) { index, note ->
+                                TimelineNoteRow(
+                                    note       = note,
                                     isSelected = selectedNotes.contains(note.id),
+                                    isFirst    = index == 0,
+                                    isLast     = index == currentNotes.lastIndex,
                                     onClick  = {
                                         if (isSelectionMode) toggleSelection(note.id)
                                         else handleNoteClick(note.id)
@@ -651,7 +839,7 @@ fun NoteListScreen(
                                         else enterSelectionMode(note.id)
                                     },
                                     onShowActions = { bottomSheetNote = note },
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp)
+                                    modifier = Modifier.padding(horizontal = 8.dp)
                                 )
                             }
                         }
@@ -678,8 +866,45 @@ fun NoteListScreen(
             onPin          = { viewModel.togglePin(note.id) },
             onDelete       = { deleteConfirmNote = note },
             onMoveToFolder = { moveToFolderNote = note },
+            onChangeColor  = { colorPickerNote = note },
             onLock         = {
-                viewModel.saveNote(note.copy(isLocked = !note.isLocked, isDirty = true, updatedAt = System.currentTimeMillis()))
+                fun applyLock(locked: Boolean) {
+                    viewModel.saveNote(note.copy(isLocked = locked, isDirty = true, updatedAt = System.currentTimeMillis()))
+                }
+                if (note.isLocked) {
+                    BiometricHelper.authenticateWithDeviceCredential(
+                        activity = context as FragmentActivity,
+                        title    = "Mở khóa ghi chú",
+                        onSuccess = { applyLock(false) },
+                        onError   = {}
+                    )
+                } else if (!BiometricHelper.isDeviceSecure(context)) {
+                    showNoPasscodeDialog = true
+                } else {
+                    applyLock(true)
+                }
+            }
+        )
+    }
+
+    colorPickerNote?.let { note ->
+        AlertDialog(
+            onDismissRequest = { colorPickerNote = null },
+            title   = { Text("Change color") },
+            text    = {
+                com.yourname.simplenotes.ui.editor.NoteColorPicker(
+                    selectedColor   = note.backgroundColor,
+                    onColorSelected = { color ->
+                        // updatedAt MUST bump here: cross-device sync is last-write-wins on
+                        // updatedAt (see SyncWorker), so leaving it unchanged means the color
+                        // change can silently lose to (or get overwritten by) another device.
+                        viewModel.saveNote(note.copy(backgroundColor = color, isDirty = true, updatedAt = System.currentTimeMillis()))
+                        colorPickerNote = null
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { colorPickerNote = null }) { Text("Done") }
             }
         )
     }
@@ -812,6 +1037,21 @@ fun NoteListScreen(
             dismissButton = { TextButton(onClick = { folderToDelete = null }) { Text("Cancel") } }
         )
     }
+
+    folderToEdit?.let { folder ->
+        EditFolderDialog(
+            folder  = folder,
+            onSave  = { name, color ->
+                viewModel.updateCategory(folder.id, name, color)
+                folderToEdit = null
+            },
+            onDelete = {
+                folderToDelete = folder
+                folderToEdit = null
+            },
+            onDismiss = { folderToEdit = null }
+        )
+    }
 }
 
 // ── Private sub-composables ───────────────────────────────────────────────────
@@ -880,15 +1120,32 @@ private fun FolderCard(
     onClick: () -> Unit,
     onLongPress: () -> Unit = {}
 ) {
-    Card(
-        shape      = RoundedCornerShape(12.dp),
-        colors     = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation  = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        modifier   = Modifier.aspectRatio(5f / 3f).combinedClickable(
-            onClick     = onClick,
-            onLongClick = onLongPress
+    // Same "Bàn Làm Việc" sticky-note treatment as note cards: a small stable per-folder tilt
+    // (derived from the folder's own id, so it doesn't reshuffle on recomposition) plus a flat,
+    // hard-edged paper shadow tinted with the folder's own color instead of a soft blur.
+    val tiltDeg = remember(category.id) {
+        val h = ((category.id.hashCode() % 10_000) + 10_000) % 10_000
+        (h / 10_000f) * 4.4f - 2.2f // roughly -2.2°..+2.2°
+    }
+    val shadowColor = remember(category.colorArgb) { Color(category.colorArgb).darken(0.4f) }
+
+    Box(modifier = Modifier.graphicsLayer(rotationZ = tiltDeg)) {
+        Box(
+            Modifier
+                .matchParentSize()
+                .offset(x = 3.dp, y = 4.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(shadowColor)
         )
-    ) {
+        Card(
+            shape      = RoundedCornerShape(16.dp),
+            colors     = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation  = CardDefaults.cardElevation(defaultElevation = 0.dp),
+            modifier   = Modifier.aspectRatio(5f / 3f).combinedClickable(
+                onClick     = onClick,
+                onLongClick = onLongPress
+            )
+        ) {
         Box(modifier = Modifier.fillMaxSize()) {
             // Color strip: top-right, width=3/5, height=1/5, bottom-left corner rounded
             val ribbonColor = Color(category.colorArgb)
@@ -930,6 +1187,7 @@ private fun FolderCard(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.align(Alignment.BottomStart).padding(7.dp)
             )
+        }
         }
     }
 }
@@ -1012,21 +1270,7 @@ private fun CreateFolderDialog(
     onDismiss: () -> Unit
 ) {
     var name by remember { mutableStateOf("") }
-    var selectedColor by remember { mutableStateOf(0xFF1976D2.toInt()) }
-    val colorOptions = listOf(
-        // Blues
-        0xFF1976D2.toInt(), 0xFF1565C0.toInt(), 0xFF0288D1.toInt(), 0xFF0097A7.toInt(),
-        // Greens
-        0xFF388E3C.toInt(), 0xFF2E7D32.toInt(), 0xFF558B2F.toInt(), 0xFF00897B.toInt(),
-        // Reds / Pinks
-        0xFFD32F2F.toInt(), 0xFFC62828.toInt(), 0xFFE91E63.toInt(), 0xFFAD1457.toInt(),
-        // Purples
-        0xFF7B1FA2.toInt(), 0xFF6A1B9A.toInt(), 0xFF4527A0.toInt(), 0xFF283593.toInt(),
-        // Oranges / Yellows
-        0xFFF57C00.toInt(), 0xFFE65100.toInt(), 0xFFF9A825.toInt(), 0xFFF57F17.toInt(),
-        // Browns / Greys
-        0xFF5D4037.toInt(), 0xFF4E342E.toInt(), 0xFF546E7A.toInt(), 0xFF37474F.toInt()
-    )
+    var selectedColor by remember { mutableStateOf(FOLDER_COLOR_PALETTE.first()) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title   = { Text("Create Folder") },
@@ -1039,19 +1283,7 @@ private fun CreateFolderDialog(
                     singleLine    = true,
                     modifier      = Modifier.fillMaxWidth()
                 )
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(colorOptions) { colorInt ->
-                        Surface(
-                            color    = Color(colorInt),
-                            shape    = CircleShape,
-                            onClick  = { selectedColor = colorInt },
-                            modifier = Modifier.size(32.dp),
-                            border   = if (selectedColor == colorInt)
-                                BorderStroke(2.dp, MaterialTheme.colorScheme.onSurface)
-                            else null
-                        ) {}
-                    }
-                }
+                FolderColorPicker(selectedColor = selectedColor, onColorSelected = { selectedColor = it })
             }
         },
         confirmButton = {
@@ -1062,6 +1294,157 @@ private fun CreateFolderDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
+}
+
+/** Edit dialog for an existing folder: rename + change its color range, opened via long-press. */
+@Composable
+private fun EditFolderDialog(
+    folder: Category,
+    onSave: (String, Int) -> Unit,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var name by remember { mutableStateOf(folder.name) }
+    var selectedColor by remember { mutableStateOf(folder.colorArgb) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title   = { Text("Edit Folder") },
+        text    = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value         = name,
+                    onValueChange = { name = it },
+                    label         = { Text("Name") },
+                    singleLine    = true,
+                    modifier      = Modifier.fillMaxWidth()
+                )
+                Text(
+                    "Màu thư mục",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                FolderColorPicker(selectedColor = selectedColor, onColorSelected = { selectedColor = it })
+                TextButton(
+                    onClick  = onDelete,
+                    modifier = Modifier.align(Alignment.Start)
+                ) { Text("Xóa thư mục", color = MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick  = { if (name.isNotBlank()) onSave(name, selectedColor) },
+                enabled  = name.isNotBlank()
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+/** Scrollable grid of folder color swatches, shared by create + edit folder dialogs. */
+@Composable
+private fun FolderColorPicker(
+    selectedColor: Int,
+    onColorSelected: (Int) -> Unit
+) {
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(FOLDER_COLOR_PALETTE) { colorInt ->
+            Surface(
+                color    = Color(colorInt),
+                shape    = CircleShape,
+                onClick  = { onColorSelected(colorInt) },
+                modifier = Modifier.size(32.dp),
+                border   = if (selectedColor == colorInt)
+                    BorderStroke(2.dp, MaterialTheme.colorScheme.onSurface)
+                else null
+            ) {}
+        }
+    }
+}
+
+/** Pastel dot colors cycled through the "Nhãn" (tags) list in the drawer. */
+private val DRAWER_TAG_COLORS = listOf(
+    Color(0xFFFFB3C6), Color(0xFFA8D8F0), Color(0xFFD4C5F9),
+    Color(0xFFA8E6B0), Color(0xFFFFC178), Color(0xFF8DE0D0)
+)
+
+@Composable
+private fun DrawerSectionLabel(text: String) {
+    Text(
+        text,
+        fontSize   = 12.sp,
+        fontWeight = FontWeight.Bold,
+        color      = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier   = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+    )
+}
+
+/** Pill-shaped nav row for the drawer (mirrors the left-nav reference: 56dp, fully rounded, selected = primaryContainer). */
+@Composable
+private fun DrawerNavItem(
+    icon: ImageVector,
+    label: String,
+    selected: Boolean,
+    count: Int? = null,
+    onClick: () -> Unit
+) {
+    val bg = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+    val content = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .clip(RoundedCornerShape(28.dp))
+            .background(bg)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp)
+    ) {
+        Icon(icon, null, tint = content, modifier = Modifier.size(24.dp))
+        Spacer(Modifier.width(16.dp))
+        Text(
+            label, fontSize = 16.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            color = content, modifier = Modifier.weight(1f)
+        )
+        if (count != null) {
+            DrawerCount(count)
+        }
+    }
+}
+
+/** Right-aligned count label shared by all drawer rows so digits line up regardless of row type or digit count. */
+@Composable
+private fun DrawerCount(count: Int) {
+    Text(
+        "$count",
+        fontSize = 12.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.widthIn(min = 20.dp),
+        textAlign = TextAlign.End
+    )
+}
+
+/** Colored-dot row for a label/tag filter shortcut in the drawer. */
+@Composable
+private fun DrawerTagItem(color: Color, label: String, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(44.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .background(if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp)
+    ) {
+        Box(Modifier.size(12.dp).clip(CircleShape).background(color))
+        Spacer(Modifier.width(16.dp))
+        Text(
+            label, fontSize = 15.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+        )
+    }
 }
 
 @Composable
@@ -1075,11 +1458,11 @@ private fun FolderDrawerItem(
     val isSelected = selectedFolderId == node.category.id
     val count = categoryCounts[node.category.id] ?: 0
     Surface(
-        color = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
         shape = RoundedCornerShape(50),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 1.dp)
+            .padding(vertical = 1.dp)
             .clickable { onFolderClick(node.category.id) }
     ) {
         Row(
@@ -1105,16 +1488,10 @@ private fun FolderDrawerItem(
                 modifier = Modifier.weight(1f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                color = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer
+                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
                         else MaterialTheme.colorScheme.onSurface
             )
-            Text(
-                "$count",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.width(28.dp),
-                textAlign = TextAlign.End
-            )
+            DrawerCount(count)
         }
     }
     node.children.forEach { child ->

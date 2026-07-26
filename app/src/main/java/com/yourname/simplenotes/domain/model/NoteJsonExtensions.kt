@@ -22,6 +22,7 @@ fun Note.toJson(): String = JSONObject().apply {
     put("labels", JSONArray(labels))
     put("createdAt", createdAt)
     put("updatedAt", updatedAt)
+    put("contentUpdatedAt", contentUpdatedAt)
     put("isDeleted", isDeleted)
 }.toString()
 
@@ -60,6 +61,8 @@ fun Note.Companion.fromJson(json: String): Note {
         labels         = labels,
         createdAt      = obj.getLong("createdAt"),
         updatedAt      = obj.getLong("updatedAt"),
+        // Backward-compatible: notes uploaded before this field existed fall back to updatedAt.
+        contentUpdatedAt = obj.optLong("contentUpdatedAt", obj.getLong("updatedAt")),
         isDirty        = false,
         isDeleted      = obj.optBoolean("isDeleted", false)
     )

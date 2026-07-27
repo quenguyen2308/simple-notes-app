@@ -1,5 +1,6 @@
 package com.yourname.simplenotes.data.remote
 
+import android.util.Log
 import com.google.api.client.http.ByteArrayContent
 import com.google.api.services.drive.Drive
 import com.yourname.simplenotes.domain.model.Category
@@ -31,16 +32,40 @@ class DriveDataSource(private val authManager: DriveAuthManager) {
     }
 
     /**
-     * Uploads or updates a single note file.
+     * Resolves every existing `note_<id>.json` file in one list call — pass the result to
+     * [uploadNote] for a batch of notes so each one doesn't do its own list() round trip to
+     * check whether it already exists (e.g. importing 100+ notes at once would otherwise make
+     * ~2 Drive API calls per note just to find out "no, it's new", risking rate limiting).
+     */
+    suspend fun listNoteFileIds(): Map<String, String> = withContext(Dispatchers.IO) {
+        val drive = drive() ?: return@withContext emptyMap()
+        runCatching {
+            drive.files().list()
+                .setSpaces("appDataFolder")
+                .setQ("name contains 'note_' and mimeType = 'application/json'")
+                .setFields("files(id, name)")
+                .execute()
+                .files
+                ?.associate { it.name.removePrefix("note_").removeSuffix(".json") to it.id }
+                .orEmpty()
+        }.getOrElse {
+            Log.w(TAG, "listNoteFileIds failed, falling back to per-note lookups", it)
+            emptyMap()
+        }
+    }
+
+    /**
+     * Uploads or updates a single note file. Pass [knownFileId] (from [listNoteFileIds]) when
+     * uploading many notes in a batch to skip this note's own existence check.
      * Returns Drive's modifiedTime (RFC 3339) on success, null on failure or not signed in.
      */
-    suspend fun uploadNote(note: Note): String? = withContext(Dispatchers.IO) {
+    suspend fun uploadNote(note: Note, knownFileId: String? = null): String? = withContext(Dispatchers.IO) {
         val drive = drive() ?: return@withContext null
         runCatching {
             val filename = "note_${note.id}.json"
             val content = ByteArrayContent("application/json", note.toJson().toByteArray())
             val metadata = com.google.api.services.drive.model.File().setName(filename)
-            val existingId = findFileId(drive, filename)
+            val existingId = knownFileId ?: findFileId(drive, filename)
 
             if (existingId != null) {
                 drive.files().update(existingId, metadata, content)
@@ -54,6 +79,8 @@ class DriveDataSource(private val authManager: DriveAuthManager) {
                     .execute()
                     .modifiedTime?.toStringRfc3339()
             }
+        }.onFailure { e ->
+            Log.w(TAG, "uploadNote failed for ${note.id}: ${e.message}", e)
         }.getOrNull()
     }
 
@@ -85,17 +112,95 @@ class DriveDataSource(private val authManager: DriveAuthManager) {
             }
     }
 
-    /** Fetches index.json — returns map of noteId → Drive modifiedTime string. */
+    /**
+     * Fetches index.json — returns map of noteId → Drive modifiedTime string.
+     *
+     * Unlike other single-file reads, this doesn't go through [findFileId]. Two things it
+     * defends against, both variations on "a note's own file uploaded fine, but no device ever
+     * learns it exists because the index doesn't mention it":
+     *  1. Duplicate index.json files (see [findFileId]'s doc) — blindly picking one and
+     *     deleting the rest would silently drop whichever note entries only exist in the
+     *     discarded copy, so every copy is read and merged (newest timestamp wins per noteId)
+     *     before any cleanup happens.
+     *  2. A sync that got cancelled (e.g. by an overlapping SyncWorker run — see the mutex in
+     *     SyncWorker) between successfully uploading a note and writing its index entry. The
+     *     actual set of `note_*.json` files is the ground truth here, so any note file with no
+     *     matching index entry gets backfilled.
+     * Either case leaves the index changed, so it's re-persisted (and duplicates cleaned up)
+     * before returning.
+     */
     suspend fun fetchIndex(): Map<String, String> = withContext(Dispatchers.IO) {
         val drive = drive() ?: return@withContext emptyMap()
-        // No try/catch: let network errors propagate so doWork() retries on failure
-        val fileId = findFileId(drive, "index.json") ?: return@withContext emptyMap()
-        val json = drive.files().get(fileId)
-            .executeMediaAsInputStream()
-            .bufferedReader().readText()
-        JSONObject(json).let { obj ->
-            obj.keys().asSequence().associateWith { obj.getString(it) }
+        // No try/catch on the list calls: let network errors propagate so doWork() retries
+        val indexFiles = drive.files().list()
+            .setSpaces("appDataFolder")
+            .setQ("name = 'index.json'")
+            .setFields("files(id, modifiedTime)")
+            .execute()
+            .files
+
+        val merged = mutableMapOf<String, String>()
+        var changed = false
+
+        if (!indexFiles.isNullOrEmpty()) {
+            indexFiles.forEach { file ->
+                runCatching {
+                    val json = drive.files().get(file.id).executeMediaAsInputStream().bufferedReader().readText()
+                    val obj = JSONObject(json)
+                    obj.keys().forEach { key ->
+                        val value = obj.getString(key)
+                        val existing = merged[key]
+                        if (existing == null || parseIsoMillis(value) > parseIsoMillis(existing)) {
+                            merged[key] = value
+                        }
+                    }
+                }.onFailure { e -> Log.w(TAG, "fetchIndex: failed reading index.json copy (${file.id})", e) }
+            }
+            if (indexFiles.size > 1) {
+                Log.w(TAG, "fetchIndex: merging ${indexFiles.size} duplicate index.json files into ${merged.size} note entries")
+                changed = true
+            }
         }
+
+        runCatching {
+            val noteFiles = drive.files().list()
+                .setSpaces("appDataFolder")
+                .setQ("name contains 'note_' and mimeType = 'application/json'")
+                .setFields("files(name, modifiedTime)")
+                .execute()
+                .files.orEmpty()
+            noteFiles.forEach { file ->
+                val noteId = file.name.removePrefix("note_").removeSuffix(".json")
+                val modifiedTime = file.modifiedTime?.toStringRfc3339()
+                if (noteId.isNotEmpty() && modifiedTime != null && noteId !in merged) {
+                    merged[noteId] = modifiedTime
+                    changed = true
+                }
+            }
+        }.onFailure { e -> Log.w(TAG, "fetchIndex: failed to reconcile against note_*.json files", e) }
+
+        if (changed) {
+            runCatching {
+                val mergedJson = JSONObject(merged as Map<*, *>).toString()
+                val content = ByteArrayContent("application/json", mergedJson.toByteArray())
+                val survivor = indexFiles?.maxByOrNull { it.modifiedTime?.value ?: 0L }
+                if (survivor != null) {
+                    indexFiles.filter { it.id != survivor.id }.forEach { dup ->
+                        runCatching { drive.files().delete(dup.id).execute() }
+                            .onFailure { e -> Log.w(TAG, "fetchIndex: failed to delete duplicate index.json (${dup.id})", e) }
+                    }
+                    drive.files().update(survivor.id, com.google.api.services.drive.model.File(), content).execute()
+                } else {
+                    // No index.json existed at all, but reconciliation found note files — create
+                    // one directly with the backfilled data instead of leaving it missing.
+                    val metadata = com.google.api.services.drive.model.File()
+                        .setName("index.json").setParents(listOf("appDataFolder"))
+                    drive.files().create(metadata, content).execute()
+                }
+            }.onFailure { e -> Log.w(TAG, "fetchIndex: failed to persist reconciled index.json", e) }
+        }
+
+        merged
     }
 
     /** Uploads index.json with the latest noteId → modifiedTime map. */
@@ -297,13 +402,38 @@ class DriveDataSource(private val authManager: DriveAuthManager) {
         updatedAt = optLong("updatedAt", 0L)
     )
 
-    private fun findFileId(drive: Drive, filename: String): String? =
-        drive.files().list()
+    private fun findFileId(drive: Drive, filename: String): String? {
+        val files = drive.files().list()
             .setSpaces("appDataFolder")
             .setQ("name = '$filename'")
-            .setFields("files(id)")
+            .setFields("files(id, modifiedTime)")
             .execute()
             .files
-            ?.firstOrNull()
-            ?.id
+        if (files.isNullOrEmpty()) return null
+
+        val newest = files.maxByOrNull { it.modifiedTime?.value ?: 0L }!!
+        val duplicates = files.filter { it.id != newest.id }
+        if (duplicates.isNotEmpty()) {
+            // Two syncs racing on their first run (both see "no existing file" and both create
+            // one — e.g. two devices' first-ever sync, or two SyncWorker instances overlapping
+            // on the same device) leave duplicates behind. Reads/writes then unpredictably hit
+            // whichever copy this list call happens to return: a device uploading a note updates
+            // one copy of index.json while another device keeps reading a different, stale copy
+            // and never learns the note exists — silent, permanent non-sync with no error anywhere.
+            // Self-heal by deleting the older copies so every future read/write is unambiguous.
+            Log.w(TAG, "findFileId: found ${files.size} files named '$filename' — deleting ${duplicates.size} stale duplicate(s)")
+            duplicates.forEach { dup ->
+                runCatching { drive.files().delete(dup.id).execute() }
+                    .onFailure { e -> Log.w(TAG, "findFileId: failed to delete duplicate '$filename' (${dup.id})", e) }
+            }
+        }
+        return newest.id
+    }
+
+    private fun parseIsoMillis(isoString: String): Long =
+        runCatching { java.time.Instant.parse(isoString).toEpochMilli() }.getOrDefault(0L)
+
+    companion object {
+        private const val TAG = "DriveDataSource"
+    }
 }

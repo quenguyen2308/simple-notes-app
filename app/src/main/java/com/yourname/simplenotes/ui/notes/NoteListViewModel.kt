@@ -1,10 +1,13 @@
 package com.yourname.simplenotes.ui.notes
 
 import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import com.yourname.simplenotes.data.importer.ArchiveImportResult
+import com.yourname.simplenotes.data.importer.ArchiveNoteImporter
 import com.yourname.simplenotes.data.repository.CategoryRepository
 import com.yourname.simplenotes.data.repository.NoteRepository
 import com.yourname.simplenotes.domain.model.Category
@@ -12,6 +15,7 @@ import com.yourname.simplenotes.domain.model.Note
 import com.yourname.simplenotes.sync.SyncScheduler
 import com.yourname.simplenotes.sync.SyncWorker
 import com.yourname.simplenotes.ui.settings.SettingsPrefs
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -21,7 +25,14 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.UUID
+
+/** Outcome of importing an external `.backup`/`.zip` archive, shown once then cleared. */
+sealed class ArchiveImportOutcome {
+    data class Success(val result: ArchiveImportResult) : ArchiveImportOutcome()
+    object Failed : ArchiveImportOutcome()
+}
 
 class NoteListViewModel(
     private val repository: NoteRepository,
@@ -29,6 +40,8 @@ class NoteListViewModel(
     private val categoryRepository: CategoryRepository,
     context: Context
 ) : ViewModel() {
+
+    private val appContext = context.applicationContext
 
     /** True while the immediate sync job is RUNNING — used to show a loading indicator. */
     val isSyncing: StateFlow<Boolean> =
@@ -144,33 +157,85 @@ class NoteListViewModel(
 
     /** Persists notes built from imported files (Settings → "Nhập ghi chú"), one per file. */
     fun importNotes(notes: List<Note>) {
-        viewModelScope.launch { notes.forEach { repository.save(it) } }
+        viewModelScope.launch { repository.saveAll(notes) }
     }
 
-    /** Delete multiple notes by IDs. */
-    fun deleteNotes(ids: List<String>) {
-        viewModelScope.launch { ids.forEach { repository.delete(it) } }
-    }
+    private val _archiveImportOutcome = MutableStateFlow<ArchiveImportOutcome?>(null)
+    /** Result of the last [importArchive] call — collect once, then call [clearArchiveImportOutcome]. */
+    val archiveImportOutcome: StateFlow<ArchiveImportOutcome?> = _archiveImportOutcome.asStateFlow()
 
-    /** Move multiple notes to a target folder (null = remove from folder). */
-    fun moveNotes(ids: List<String>, folderId: String?) {
+    fun clearArchiveImportOutcome() { _archiveImportOutcome.value = null }
+
+    /**
+     * Imports notes from a picked `.backup` (EasyNotes native backup) or split `.zip` archive
+     * (Settings → "Nhập từ file .zip / .backup"), preserving each note's original creation/update
+     * timestamps and mapping split-file category prefixes to folders.
+     */
+    fun importArchive(uri: Uri) {
         viewModelScope.launch {
-            val now = System.currentTimeMillis()
-            ids.forEach { id ->
-                val note = repository.getById(id) ?: return@forEach
-                repository.save(note.copy(folderId = folderId, isDirty = true, updatedAt = now))
+            val folderCache = mutableMapOf<String, String>()
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    appContext.contentResolver.openInputStream(uri)?.use { input ->
+                        ArchiveNoteImporter.import(input) { name -> resolveFolderId(name, folderCache) }
+                    }
+                }.getOrNull()
             }
+
+            if (result == null) {
+                _archiveImportOutcome.value = ArchiveImportOutcome.Failed
+                return@launch
+            }
+            repository.saveAll(result.notes)
+            _archiveImportOutcome.value = ArchiveImportOutcome.Success(result)
         }
     }
 
-    /** Lock or unlock multiple notes by IDs. */
+    /** Finds a folder by (case-insensitive) name, creating it if absent; caches within one import run. */
+    private suspend fun resolveFolderId(name: String, cache: MutableMap<String, String>): String? {
+        val trimmed = name.trim()
+        if (trimmed.isBlank()) return null
+        val key = trimmed.lowercase()
+        cache[key]?.let { return it }
+
+        val existing = categoryRepository.getAll().firstOrNull { it.name.equals(trimmed, ignoreCase = true) }
+        val id = existing?.id ?: UUID.randomUUID().toString().also { newId ->
+            categoryRepository.save(Category(id = newId, name = trimmed))
+        }
+        cache[key] = id
+        return id
+    }
+
+    /** Delete multiple notes by IDs — one bulk write and one sync trigger, not one per note. */
+    fun deleteNotes(ids: List<String>) {
+        viewModelScope.launch { repository.deleteAll(ids) }
+    }
+
+    /**
+     * Move multiple notes to a target folder (null = remove from folder). Batched via
+     * [NoteRepository.saveAll] — looping [NoteRepository.save] per note each triggers its own
+     * immediate sync, and WorkManager's REPLACE policy cancels the previous (still in-flight)
+     * one, so a large selection could leave most of the batch stuck dirty for a long time
+     * (e.g. locking notes across several folders one at a time reproduced exactly this).
+     */
+    fun moveNotes(ids: List<String>, folderId: String?) {
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            val updated = ids.mapNotNull { id ->
+                repository.getById(id)?.copy(folderId = folderId, isDirty = true, updatedAt = now)
+            }
+            repository.saveAll(updated)
+        }
+    }
+
+    /** Lock or unlock multiple notes by IDs — see [moveNotes] for why this is batched. */
     fun lockNotes(ids: List<String>, locked: Boolean) {
         viewModelScope.launch {
             val now = System.currentTimeMillis()
-            ids.forEach { id ->
-                val note = repository.getById(id) ?: return@forEach
-                repository.save(note.copy(isLocked = locked, isDirty = true, updatedAt = now))
+            val updated = ids.mapNotNull { id ->
+                repository.getById(id)?.copy(isLocked = locked, isDirty = true, updatedAt = now)
             }
+            repository.saveAll(updated)
         }
     }
 
@@ -186,10 +251,10 @@ class NoteListViewModel(
     fun unpinNotes(ids: List<String>) {
         viewModelScope.launch {
             val now = System.currentTimeMillis()
-            ids.forEach { id ->
-                val note = repository.getById(id) ?: return@forEach
-                repository.save(note.copy(isPinned = false, isDirty = true, updatedAt = now))
+            val updated = ids.mapNotNull { id ->
+                repository.getById(id)?.copy(isPinned = false, isDirty = true, updatedAt = now)
             }
+            repository.saveAll(updated)
         }
     }
 
@@ -234,11 +299,10 @@ class NoteListViewModel(
     fun deleteFolder(id: String) {
         viewModelScope.launch {
             val now = System.currentTimeMillis()
-            repository.observeAll().first()
+            val orphaned = repository.observeAll().first()
                 .filter { it.folderId == id }
-                .forEach { note ->
-                    repository.save(note.copy(folderId = null, isDirty = true, updatedAt = now))
-                }
+                .map { it.copy(folderId = null, isDirty = true, updatedAt = now) }
+            repository.saveAll(orphaned)
             categoryRepository.delete(id)
             if (selectedCategoryId.value == id) selectedCategoryId.value = null
         }
@@ -258,7 +322,7 @@ class NoteListViewModel(
 
     fun clearRecycleBin() {
         viewModelScope.launch {
-            deletedNotes.value.forEach { repository.permanentDelete(it.id) }
+            repository.permanentDeleteAll(deletedNotes.value.map { it.id })
         }
     }
 }

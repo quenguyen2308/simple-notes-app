@@ -86,11 +86,12 @@ class NoteEditorViewModel(
     private var existingContentBlocks: List<ContentBlock> = emptyList()
     private var isNewNote = false
 
-    // Snapshot of the loaded note's content, used at save() time to tell a real content edit
-    // (title/body/checklist) apart from a cosmetic-only save (color, pin, lock, folder…) — only
-    // the former should bump contentUpdatedAt (the user-facing "date modified").
-    private var originalTitle: String = ""
-    private var originalContentUpdatedAt: Long = 0L
+    // Full snapshot of the loaded note, used at save() time to tell whether anything actually
+    // changed (skip the write+sync entirely if not — just viewing a note shouldn't dirty it)
+    // and, within that, whether it was a real content edit (title/body/checklist/images) vs. a
+    // cosmetic-only change (color, pin, lock, folder…) — only the former should bump
+    // contentUpdatedAt (the user-facing "date modified").
+    private var originalNote: Note? = null
 
     /**
      * Load an existing note by id, or prepare a blank note for "new".
@@ -121,8 +122,7 @@ class NoteEditorViewModel(
                 isPinned = note.isPinned
                 labels = note.labels
                 existingContentBlocks = note.contentBlocks
-                originalTitle = note.title
-                originalContentUpdatedAt = note.contentUpdatedAt
+                originalNote = note
                 imageBlocks = note.contentBlocks.filterIsInstance<ContentBlock.Image>()
 
                 // Detect checklist block — takes priority over text block
@@ -247,14 +247,43 @@ class NoteEditorViewModel(
                 "Text note ${SimpleDateFormat("dd/MM", Locale.getDefault()).format(Date())}"
             } else title
 
+            val original = originalNote
+            // Compare by *meaning*, not by the raw HTML string: the rich editor's setHtml()/
+            // toHtml() round trip commonly reformats HTML (different <p>/<br> structure, etc.)
+            // even when the user didn't touch anything, so comparing contentBlocks (which
+            // embeds htmlContent) directly would flag a no-op view as an edit — which used to
+            // bump contentUpdatedAt (the user-facing "date modified") just from opening a note.
+            val originalWasChecklist = existingContentBlocks.any { it is ContentBlock.Checklist }
+            val originalPlainText = existingContentBlocks
+                .filterIsInstance<ContentBlock.Text>()
+                .joinToString("\n") { it.text }
+            val originalChecklistItems = existingContentBlocks
+                .filterIsInstance<ContentBlock.Checklist>()
+                .firstOrNull()?.items.orEmpty()
+            val originalImages = existingContentBlocks.filterIsInstance<ContentBlock.Image>()
+
             val now = System.currentTimeMillis()
             // Only a real edit to title/body/checklist/images bumps the user-facing "date
             // modified" — reordering the folder, pinning, locking, etc. don't, even though they
             // still bump updatedAt below (needed for Drive's last-write-wins conflict resolution).
             val contentChanged = isNewNote ||
-                effectiveTitle != originalTitle ||
-                contentBlocks != existingContentBlocks
-            val newContentUpdatedAt = if (contentChanged) now else originalContentUpdatedAt
+                effectiveTitle != original?.title ||
+                isChecklistMode != originalWasChecklist ||
+                (if (isChecklistMode) checklistItems != originalChecklistItems else plainText != originalPlainText) ||
+                imageBlocks != originalImages
+            val newContentUpdatedAt = if (contentChanged) now else original?.contentUpdatedAt ?: now
+
+            // Nothing at all changed (not even folder/color/pin/lock) — skip the write entirely
+            // instead of just leaving contentUpdatedAt alone, so merely opening and closing a
+            // note doesn't mark it dirty or trigger a pointless Drive re-upload.
+            val nothingChanged = original != null && !isNewNote && !contentChanged &&
+                original.folderId == selectedCategoryId &&
+                original.backgroundColor == backgroundColor &&
+                original.isPinned == isPinned &&
+                original.labels == labels &&
+                original.isLocked == isLocked &&
+                original.pinHash == pinHash
+            if (nothingChanged) return@launch
 
             repository.save(
                 Note(

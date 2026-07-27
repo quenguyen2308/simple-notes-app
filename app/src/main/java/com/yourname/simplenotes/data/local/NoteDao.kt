@@ -33,6 +33,10 @@ interface NoteDao {
     @Query("UPDATE notes SET isDeleted = 1, isDirty = 1, updatedAt = :now WHERE id = :id")
     suspend fun softDelete(id: String, now: Long = System.currentTimeMillis())
 
+    /** Bulk soft delete (e.g. selection-mode "delete selected") — one write, not one per note. */
+    @Query("UPDATE notes SET isDeleted = 1, isDirty = 1, updatedAt = :now WHERE id IN (:ids)")
+    suspend fun softDeleteAll(ids: List<String>, now: Long = System.currentTimeMillis())
+
     /** Batch-fetch notes by ID list; used by SearchRepository to inflate FTS results. */
     @Query("SELECT * FROM notes WHERE id IN (:ids) AND isDeleted = 0")
     suspend fun getByIds(ids: List<String>): List<NoteEntity>

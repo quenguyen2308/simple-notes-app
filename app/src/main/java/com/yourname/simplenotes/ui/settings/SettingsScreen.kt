@@ -37,7 +37,8 @@ private const val SUPPORT_EMAIL = "quenguyen2308@gmail.com"
 fun SettingsScreen(
     onThemeChange: (String) -> Unit = {},
     onDynamicColorChange: (Boolean) -> Unit = {},
-    onImportNotes: (List<Note>) -> Unit = {}
+    onImportNotes: (List<Note>) -> Unit = {},
+    onImportArchive: (Uri) -> Unit = {}
 ) {
     val context = LocalContext.current
     val prefs = remember { SettingsPrefs(context) }
@@ -67,6 +68,12 @@ fun SettingsScreen(
     var defaultBg     by remember { mutableStateOf(prefs.defaultNoteBackground) }
     var showLinksEnabled by remember { mutableStateOf(prefs.showLinksEnabled) }
     var hideScrollbarEnabled by remember { mutableStateOf(prefs.hideScrollbarEnabled) }
+    val archiveImportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) onImportArchive(uri)
+    }
+
     var showThemeDialog by remember { mutableStateOf(false) }
     var showLockMethodDialog by remember { mutableStateOf(false) }
     var showPageStyleDialog by remember { mutableStateOf(false) }
@@ -250,6 +257,12 @@ fun SettingsScreen(
                 title = "Nhập ghi chú từ file",
                 subtitle = "Chọn file .txt — ví dụ xuất/chia sẻ từ Samsung Notes, Easy Note",
                 onClick = { importLauncher.launch(arrayOf("text/plain")) }
+            )
+            RowDivider()
+            PlainRow(
+                title = "Nhập từ file .backup / .zip",
+                subtitle = "Khôi phục từ bản sao lưu EasyNotes (.backup) hoặc file .zip ghi chú đã tách — giữ nguyên ngày tạo/sửa",
+                onClick = { archiveImportLauncher.launch(arrayOf("*/*")) }
             )
         }
 

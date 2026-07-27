@@ -1,13 +1,16 @@
 package com.yourname.simplenotes.ui.notes
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -17,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.*
@@ -33,6 +37,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -44,15 +49,19 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.yourname.simplenotes.data.importer.ArchiveFormat
 import com.yourname.simplenotes.domain.model.Category
 import com.yourname.simplenotes.domain.model.Note
 import com.yourname.simplenotes.ui.settings.SettingsScreen
@@ -60,6 +69,7 @@ import com.yourname.simplenotes.ui.theme.FOLDER_COLOR_PALETTE
 import com.yourname.simplenotes.util.BiometricHelper
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import org.koin.androidx.compose.koinViewModel
 
 private data class FolderNode(val category: Category, val children: List<FolderNode>)
@@ -183,6 +193,7 @@ fun NoteListScreen(
     val allLabels by viewModel.allLabels.collectAsStateWithLifecycle()
     val selectedLabel by viewModel.selectedLabel.collectAsStateWithLifecycle()
     val pinnedOnly by viewModel.pinnedOnly.collectAsStateWithLifecycle()
+    val archiveImportOutcome by viewModel.archiveImportOutcome.collectAsStateWithLifecycle()
 
     val pullRefreshState = rememberPullToRefreshState()
 
@@ -202,6 +213,31 @@ fun NoteListScreen(
     val account = remember { GoogleSignIn.getLastSignedInAccount(context) }
     val accountPhotoUrl = account?.photoUrl
 
+    LaunchedEffect(archiveImportOutcome) {
+        val outcome = archiveImportOutcome ?: return@LaunchedEffect
+        val message = when (outcome) {
+            is ArchiveImportOutcome.Success -> {
+                val result = outcome.result
+                val formatLabel = when (result.format) {
+                    ArchiveFormat.BACKUP -> "EasyNotes .backup"
+                    ArchiveFormat.SPLIT_TEXT -> ".zip"
+                    ArchiveFormat.UNKNOWN -> "file"
+                }
+                if (result.notes.isEmpty()) {
+                    "Không tìm thấy ghi chú nào để nhập trong $formatLabel"
+                } else {
+                    buildString {
+                        append("Đã nhập ${result.notes.size} ghi chú từ $formatLabel")
+                        if (result.skippedTrashed > 0) append(", bỏ qua ${result.skippedTrashed} ghi chú trong thùng rác")
+                    }
+                }
+            }
+            ArchiveImportOutcome.Failed -> "Không đọc được file — kiểm tra lại định dạng .backup/.zip"
+        }
+        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+        viewModel.clearArchiveImportOutcome()
+    }
+
     var viewingFolderId by rememberSaveable { mutableStateOf<String?>(null) }
     var showSettings    by remember { mutableStateOf(false) }
     var showRecycleBin  by remember { mutableStateOf(false) }
@@ -218,7 +254,9 @@ fun NoteListScreen(
     var deleteConfirmNote by remember { mutableStateOf<Note?>(null) }
     var showBulkDeleteConfirm by remember { mutableStateOf(false) }
     var showNoPasscodeDialog  by remember { mutableStateOf(false) }
-    var moveToFolderNote by remember { mutableStateOf<Note?>(null) }
+    // Target note ids for the "move to folder" dialog — a single id from the note's own
+    // bottom sheet, or multiple ids from the selection action bar's bulk move button.
+    var moveTargetNoteIds by remember { mutableStateOf<List<String>?>(null) }
     var colorPickerNote  by remember { mutableStateOf<Note?>(null) }
     var folderToDelete   by remember { mutableStateOf<Category?>(null) }
     var folderToEdit     by remember { mutableStateOf<Category?>(null) }
@@ -491,7 +529,8 @@ fun NoteListScreen(
                 SettingsScreen(
                     onThemeChange = onThemeChange,
                     onDynamicColorChange = onDynamicColorChange,
-                    onImportNotes = { viewModel.importNotes(it) }
+                    onImportNotes = { viewModel.importNotes(it) },
+                    onImportArchive = { viewModel.importArchive(it) }
                 )
             }
             return@ModalNavigationDrawer
@@ -506,10 +545,20 @@ fun NoteListScreen(
                             selectedNotes.isNotEmpty() &&
                             selectedNotes.all { id -> notes.find { it.id == id }?.isLocked == true }
                         }
+                        val allNoteIds = remember(currentNotes) { currentNotes.map { it.id }.toSet() }
                         SelectionActionBar(
                             selectedCount    = selectedNotes.size,
+                            allSelected       = selectedNotes.isNotEmpty() && selectedNotes == allNoteIds,
                             allSelectedLocked = allSelectedLocked,
-                            onSelectAll      = { selectedNotes = currentNotes.map { it.id }.toSet() },
+                            onSelectAll      = {
+                                if (selectedNotes == allNoteIds) {
+                                    // Already all selected — tapping again clears the selection.
+                                    exitSelectionMode()
+                                } else {
+                                    selectedNotes = allNoteIds
+                                }
+                            },
+                            onMoveToFolder   = { moveTargetNoteIds = selectedNotes.toList() },
                             onDeselect       = { exitSelectionMode() },
                             onDelete         = { showBulkDeleteConfirm = true },
                             onLock = {
@@ -704,9 +753,10 @@ fun NoteListScreen(
                                     categories     = categories,
                                     categoryCounts = categoryCounts,
                                     onFolderClick  = { id -> viewingFolderId = id },
-                                    onFolderLongPress = { id ->
+                                    onFolderMoreClick = { id ->
                                         folderToEdit = categories.find { it.id == id }
-                                    }
+                                    },
+                                    onReorder = { ids -> viewModel.reorderCategories(ids) }
                                 )
                             }
                         }
@@ -865,7 +915,7 @@ fun NoteListScreen(
             onDismiss      = { bottomSheetNote = null },
             onPin          = { viewModel.togglePin(note.id) },
             onDelete       = { deleteConfirmNote = note },
-            onMoveToFolder = { moveToFolderNote = note },
+            onMoveToFolder = { moveTargetNoteIds = listOf(note.id) },
             onChangeColor  = { colorPickerNote = note },
             onLock         = {
                 fun applyLock(locked: Boolean) {
@@ -980,11 +1030,15 @@ fun NoteListScreen(
         )
     }
 
-    moveToFolderNote?.let { note ->
-        var pickedFolderId by remember(note.id) { mutableStateOf(note.folderId) }
+    moveTargetNoteIds?.let { ids ->
+        // Pre-select the common folder when every target note already shares one.
+        val initialFolderId = ids.mapNotNull { id -> notes.find { it.id == id }?.folderId }
+            .distinct()
+            .singleOrNull()
+        var pickedFolderId by remember(ids) { mutableStateOf(initialFolderId) }
         AlertDialog(
-            onDismissRequest = { moveToFolderNote = null },
-            title   = { Text("Chuyển thư mục") },
+            onDismissRequest = { moveTargetNoteIds = null },
+            title   = { Text(if (ids.size > 1) "Chuyển ${ids.size} ghi chú vào thư mục" else "Chuyển thư mục") },
             text    = {
                 Column {
                     com.yourname.simplenotes.ui.folder.FolderBrowser(
@@ -998,12 +1052,13 @@ fun NoteListScreen(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    viewModel.moveNotes(listOf(note.id), pickedFolderId)
-                    moveToFolderNote = null
+                    viewModel.moveNotes(ids, pickedFolderId)
+                    moveTargetNoteIds = null
+                    if (ids.size > 1) exitSelectionMode()
                 }) { Text("Chuyển") }
             },
             dismissButton = {
-                TextButton(onClick = { moveToFolderNote = null }) { Text("Hủy") }
+                TextButton(onClick = { moveTargetNoteIds = null }) { Text("Hủy") }
             }
         )
     }
@@ -1080,45 +1135,147 @@ private fun BasicSearchField(
     )
 }
 
+/**
+ * A 4-column grid of folder cards that supports long-press drag-and-drop reordering.
+ * Cards are laid out with absolute pixel offsets (rather than a Row/Column flow or
+ * LazyVerticalGrid) so each card's position can be independently animated as the drag
+ * reshuffles [orderedIds] — non-dragged cards slide smoothly into their new slot while
+ * the dragged card tracks the finger directly. The final order is reported via
+ * [onReorder] once the drag ends, and persisted through [NoteListViewModel.reorderCategories].
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FolderGrid(
     categories: List<Category>,
     categoryCounts: Map<String, Int>,
     onFolderClick: (String) -> Unit,
-    onFolderLongPress: (String) -> Unit = {}
+    onFolderMoreClick: (String) -> Unit = {},
+    onReorder: (List<String>) -> Unit = {}
 ) {
-    Column(
-        modifier             = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
-        verticalArrangement  = Arrangement.spacedBy(8.dp)
+    if (categories.isEmpty()) return
+    val columns = 4
+    val spacing = 8.dp
+    val byId = remember(categories) { categories.associateBy { it.id } }
+
+    var orderedIds by remember { mutableStateOf(categories.map { it.id }) }
+    var draggingId by remember { mutableStateOf<String?>(null) }
+    // Accumulated finger movement since drag start, plus the dragged card's slot position
+    // at drag start — kept separate so reshuffling orderedIds mid-drag (which moves the
+    // dragged item's own index) never feeds back into its own rendered position.
+    var dragOffsetPx by remember { mutableStateOf(Offset.Zero) }
+    var dragStartOffsetPx by remember { mutableStateOf(Offset.Zero) }
+
+    LaunchedEffect(categories) {
+        if (draggingId == null) orderedIds = categories.map { it.id }
+    }
+
+    BoxWithConstraints(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp)
     ) {
-        categories.chunked(4).forEach { row ->
-            Row(
-                modifier              = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                row.forEach { category ->
-                    Box(Modifier.weight(1f)) {
+        val density = LocalDensity.current
+        val cellWidth = (maxWidth - spacing * (columns - 1)) / columns
+        val cellHeight = cellWidth * 3f / 5f
+        val cellWidthPx = with(density) { cellWidth.toPx() }
+        val cellHeightPx = with(density) { cellHeight.toPx() }
+        val spacingPx = with(density) { spacing.toPx() }
+        val rows = (orderedIds.size + columns - 1) / columns
+        val totalHeight = cellHeight * rows + spacing * (rows - 1).coerceAtLeast(0)
+
+        Box(Modifier.fillMaxWidth().height(totalHeight)) {
+            orderedIds.forEachIndexed { index, id ->
+                key(id) {
+                    val category = byId[id]
+                    if (category != null) {
+                    val isDragging = id == draggingId
+                    val col = index % columns
+                    val row = index / columns
+                    val targetXPx = (cellWidthPx + spacingPx) * col
+                    val targetYPx = (cellHeightPx + spacingPx) * row
+                    val animatedX by animateFloatAsState(targetXPx, label = "folderX")
+                    val animatedY by animateFloatAsState(targetYPx, label = "folderY")
+
+                    Box(
+                        modifier = Modifier
+                            .width(cellWidth)
+                            .height(cellHeight)
+                            .offset {
+                                if (isDragging) {
+                                    IntOffset(
+                                        (dragStartOffsetPx.x + dragOffsetPx.x).roundToInt(),
+                                        (dragStartOffsetPx.y + dragOffsetPx.y).roundToInt()
+                                    )
+                                } else {
+                                    IntOffset(animatedX.roundToInt(), animatedY.roundToInt())
+                                }
+                            }
+                            .zIndex(if (isDragging) 1f else 0f)
+                            .pointerInput(id) {
+                                detectDragGesturesAfterLongPress(
+                                    onDragStart = {
+                                        val startIndex = orderedIds.indexOf(id)
+                                        if (startIndex >= 0) {
+                                            draggingId = id
+                                            dragOffsetPx = Offset.Zero
+                                            dragStartOffsetPx = Offset(
+                                                (cellWidthPx + spacingPx) * (startIndex % columns),
+                                                (cellHeightPx + spacingPx) * (startIndex / columns)
+                                            )
+                                        }
+                                    },
+                                    onDragEnd = {
+                                        draggingId = null
+                                        dragOffsetPx = Offset.Zero
+                                        onReorder(orderedIds)
+                                    },
+                                    onDragCancel = {
+                                        draggingId = null
+                                        dragOffsetPx = Offset.Zero
+                                    },
+                                    onDrag = { change, amount ->
+                                        change.consume()
+                                        dragOffsetPx += amount
+                                        val currentIndex = orderedIds.indexOf(id)
+                                        if (currentIndex >= 0) {
+                                            val rawX = dragStartOffsetPx.x + dragOffsetPx.x
+                                            val rawY = dragStartOffsetPx.y + dragOffsetPx.y
+                                            val targetCol = (rawX / (cellWidthPx + spacingPx))
+                                                .roundToInt().coerceIn(0, columns - 1)
+                                            val targetRow = (rawY / (cellHeightPx + spacingPx))
+                                                .roundToInt().coerceIn(0, rows - 1)
+                                            val targetIndex = (targetRow * columns + targetCol)
+                                                .coerceIn(0, orderedIds.lastIndex)
+                                            if (targetIndex != currentIndex) {
+                                                orderedIds = orderedIds.toMutableList().apply {
+                                                    add(targetIndex, removeAt(currentIndex))
+                                                }
+                                            }
+                                        }
+                                    }
+                                )
+                            }
+                    ) {
                         FolderCard(
-                            category     = category,
-                            noteCount    = categoryCounts[category.id] ?: 0,
-                            onClick      = { onFolderClick(category.id) },
-                            onLongPress  = { onFolderLongPress(category.id) }
+                            category    = category,
+                            noteCount   = categoryCounts[category.id] ?: 0,
+                            onClick     = { onFolderClick(category.id) },
+                            onMoreClick = { onFolderMoreClick(category.id) },
+                            isDragging  = isDragging
                         )
                     }
+                    }
                 }
-                repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FolderCard(
     category: Category,
     noteCount: Int,
     onClick: () -> Unit,
-    onLongPress: () -> Unit = {}
+    onMoreClick: () -> Unit = {},
+    isDragging: Boolean = false
 ) {
     // Same "Bàn Làm Việc" sticky-note treatment as note cards: a small stable per-folder tilt
     // (derived from the folder's own id, so it doesn't reshuffle on recomposition) plus a flat,
@@ -1128,8 +1285,9 @@ private fun FolderCard(
         (h / 10_000f) * 4.4f - 2.2f // roughly -2.2°..+2.2°
     }
     val shadowColor = remember(category.colorArgb) { Color(category.colorArgb).darken(0.4f) }
+    val scale by animateFloatAsState(if (isDragging) 1.06f else 1f, label = "folderCardScale")
 
-    Box(modifier = Modifier.graphicsLayer(rotationZ = tiltDeg)) {
+    Box(modifier = Modifier.graphicsLayer(rotationZ = tiltDeg, scaleX = scale, scaleY = scale)) {
         Box(
             Modifier
                 .matchParentSize()
@@ -1140,11 +1298,8 @@ private fun FolderCard(
         Card(
             shape      = RoundedCornerShape(16.dp),
             colors     = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation  = CardDefaults.cardElevation(defaultElevation = 0.dp),
-            modifier   = Modifier.aspectRatio(5f / 3f).combinedClickable(
-                onClick     = onClick,
-                onLongClick = onLongPress
-            )
+            elevation  = CardDefaults.cardElevation(defaultElevation = if (isDragging) 6.dp else 0.dp),
+            modifier   = Modifier.aspectRatio(5f / 3f).clickable(onClick = onClick)
         ) {
         Box(modifier = Modifier.fillMaxSize()) {
             // Color strip: top-right, width=3/5, height=1/5, bottom-left corner rounded
@@ -1187,6 +1342,25 @@ private fun FolderCard(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.align(Alignment.BottomStart).padding(7.dp)
             )
+            // Options (rename/color/delete) — moved off long-press so long-press is free to
+            // start a drag-to-reorder gesture instead.
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(2.dp)
+                    .size(22.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.55f))
+                    .clickable(onClick = onMoreClick),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.MoreVert,
+                    contentDescription = "Tùy chọn thư mục",
+                    tint = Color.Black.copy(alpha = 0.65f),
+                    modifier = Modifier.size(14.dp)
+                )
+            }
         }
         }
     }
@@ -1509,8 +1683,10 @@ private fun FolderDrawerItem(
 @Composable
 private fun SelectionActionBar(
     selectedCount: Int,
+    allSelected: Boolean,
     allSelectedLocked: Boolean,
     onSelectAll: () -> Unit,
+    onMoveToFolder: () -> Unit,
     onDeselect: () -> Unit,
     onDelete: () -> Unit,
     onLock: () -> Unit
@@ -1527,7 +1703,13 @@ private fun SelectionActionBar(
         ) {
             Text("$selectedCount đã chọn", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 8.dp))
             Row {
-                IconButton(onClick = onSelectAll) { Icon(Icons.Default.SelectAll, "Chọn tất cả") }
+                IconButton(onClick = onSelectAll) {
+                    Icon(
+                        if (allSelected) Icons.Default.Deselect else Icons.Default.SelectAll,
+                        if (allSelected) "Bỏ chọn tất cả" else "Chọn tất cả"
+                    )
+                }
+                IconButton(onClick = onMoveToFolder) { Icon(Icons.AutoMirrored.Filled.DriveFileMove, "Chuyển thư mục") }
                 IconButton(onClick = onLock) {
                     Icon(
                         if (allSelectedLocked) Icons.Default.LockOpen else Icons.Default.Lock,

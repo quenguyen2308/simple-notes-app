@@ -44,9 +44,33 @@ class NoteRepositoryImpl(
         syncScheduler.triggerImmediateSync()
     }
 
+    override suspend fun saveAll(notes: List<Note>) {
+        if (notes.isEmpty()) return
+        dao.upsertAll(notes.map { it.toEntity() })
+        notes.forEach { note ->
+            noteSearchDao.upsertIndex(
+                NoteSearchEntity(
+                    noteId = note.id,
+                    title = note.title,
+                    content = note.contentBlocks
+                        .filterIsInstance<ContentBlock.Text>()
+                        .joinToString(" ") { it.text }
+                )
+            )
+        }
+        syncScheduler.triggerImmediateSync()
+    }
+
     override suspend fun delete(id: String) {
         dao.softDelete(id)
         noteSearchDao.deleteByNoteId(id)  // Remove from FTS index
+        syncScheduler.triggerImmediateSync()
+    }
+
+    override suspend fun deleteAll(ids: List<String>) {
+        if (ids.isEmpty()) return
+        dao.softDeleteAll(ids)
+        ids.forEach { noteSearchDao.deleteByNoteId(it) }
         syncScheduler.triggerImmediateSync()
     }
 
@@ -83,6 +107,16 @@ class NoteRepositoryImpl(
         noteSyncPrefs.addDeletedId(id)
         dao.permanentDeleteById(id)
         noteSearchDao.deleteByNoteId(id)
+        syncScheduler.triggerImmediateSync()
+    }
+
+    override suspend fun permanentDeleteAll(ids: List<String>) {
+        if (ids.isEmpty()) return
+        ids.forEach { id ->
+            noteSyncPrefs.addDeletedId(id)
+            dao.permanentDeleteById(id)
+            noteSearchDao.deleteByNoteId(id)
+        }
         syncScheduler.triggerImmediateSync()
     }
 

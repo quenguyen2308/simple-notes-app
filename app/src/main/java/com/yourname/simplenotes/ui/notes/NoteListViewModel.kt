@@ -239,20 +239,23 @@ class NoteListViewModel(
         }
     }
 
-    /** Toggle pin state of a single note. Pinning reorders the list but must not
-     *  bump updatedAt, since it's not a content edit and shouldn't affect last-write-wins. */
+    /** Toggle pin state of a single note. `updatedAt` bumps (needed so Drive's whole-note
+     *  last-write-wins doesn't clobber this pin with a stale copy from another device — see
+     *  NoteEditorViewModel's save logic for the same convention), but `contentUpdatedAt` does
+     *  not, so the user-facing "last edited" date shown on the card stays put. */
     fun togglePin(noteId: String) {
         viewModelScope.launch {
             val note = repository.getById(noteId) ?: return@launch
-            repository.save(note.copy(isPinned = !note.isPinned, isDirty = true))
+            repository.save(note.copy(isPinned = !note.isPinned, isDirty = true, updatedAt = System.currentTimeMillis()))
         }
     }
 
     /** Unpins multiple notes at once (e.g. "Unpin favourites from top"). */
     fun unpinNotes(ids: List<String>) {
         viewModelScope.launch {
+            val now = System.currentTimeMillis()
             val updated = ids.mapNotNull { id ->
-                repository.getById(id)?.copy(isPinned = false, isDirty = true)
+                repository.getById(id)?.copy(isPinned = false, isDirty = true, updatedAt = now)
             }
             repository.saveAll(updated)
         }

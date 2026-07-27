@@ -9,6 +9,9 @@ import com.yourname.simplenotes.domain.model.SettingsSnapshot
 import com.yourname.simplenotes.domain.model.fromJson
 import com.yourname.simplenotes.domain.model.toJson
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -86,7 +89,9 @@ class DriveDataSource(private val authManager: DriveAuthManager) {
 
     /**
      * Downloads only the specific note files whose IDs are in [noteIds].
-     * One LIST call to resolve filenames → fileIds, then one GET per needed note.
+     * One LIST call to resolve filenames → fileIds, then one GET per needed note — the GETs
+     * run concurrently (each is an independent network round trip) instead of one at a time,
+     * since a multi-note sync was otherwise paying full RTT per note serially.
      */
     suspend fun downloadNotes(noteIds: Set<String>): List<Note> = withContext(Dispatchers.IO) {
         val drive = drive() ?: return@withContext emptyList()
@@ -98,18 +103,24 @@ class DriveDataSource(private val authManager: DriveAuthManager) {
             .execute()
             .files ?: emptyList()
 
-        files
-            .filter { file ->
-                val noteId = file.name.removePrefix("note_").removeSuffix(".json")
-                noteId in noteIds
-            }
-            .mapNotNull { file ->
-                // Individual note parse failures are safe to skip
-                runCatching {
-                    val stream = drive.files().get(file.id).executeMediaAsInputStream()
-                    Note.fromJson(stream.bufferedReader().readText())
-                }.getOrNull()
-            }
+        coroutineScope {
+            files
+                .filter { file ->
+                    val noteId = file.name.removePrefix("note_").removeSuffix(".json")
+                    noteId in noteIds
+                }
+                .map { file ->
+                    async {
+                        // Individual note parse failures are safe to skip
+                        runCatching {
+                            val stream = drive.files().get(file.id).executeMediaAsInputStream()
+                            Note.fromJson(stream.bufferedReader().readText())
+                        }.getOrNull()
+                    }
+                }
+                .awaitAll()
+                .filterNotNull()
+        }
     }
 
     /**

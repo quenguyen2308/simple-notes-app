@@ -312,6 +312,7 @@ class DriveDataSource(private val authManager: DriveAuthManager) {
                 put("defaultNoteBackground", snapshot.defaultNoteBackground)
                 put("showLinksEnabled", snapshot.showLinksEnabled)
                 put("hideScrollbarEnabled", snapshot.hideScrollbarEnabled)
+                put("headerStyle", snapshot.headerStyle)
                 put("updatedAt", snapshot.updatedAt)
             }.toString()
 
@@ -345,6 +346,7 @@ class DriveDataSource(private val authManager: DriveAuthManager) {
                 defaultNoteBackground = obj.optInt("defaultNoteBackground", 0xFFFFFFFF.toInt()),
                 showLinksEnabled = obj.optBoolean("showLinksEnabled", true),
                 hideScrollbarEnabled = obj.optBoolean("hideScrollbarEnabled", false),
+                headerStyle = obj.optString("headerStyle", "default"),
                 updatedAt = obj.optLong("updatedAt", 0L)
             )
         }.getOrNull()

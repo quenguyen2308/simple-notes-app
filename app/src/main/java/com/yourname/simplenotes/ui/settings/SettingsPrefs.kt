@@ -58,6 +58,11 @@ class SettingsPrefs(context: Context) {
         get() = prefs.getBoolean(KEY_HIDE_SCROLLBAR, false)
         set(v) = edit { putBoolean(KEY_HIDE_SCROLLBAR, v) }
 
+    /** "default" | "comic" | "cute" | "meadow" — visual style of the note-list header/FAB. */
+    var headerStyle: String
+        get() = prefs.getString(KEY_HEADER_STYLE, "default") ?: "default"
+        set(v) = edit { putString(KEY_HEADER_STYLE, v) }
+
     /** epochMs of the last local settings change. Used for last-write-wins Drive sync. */
     val updatedAt: Long
         get() = prefs.getLong(KEY_UPDATED_AT, 0L)
@@ -72,6 +77,7 @@ class SettingsPrefs(context: Context) {
         defaultNoteBackground = defaultNoteBackground,
         showLinksEnabled = showLinksEnabled,
         hideScrollbarEnabled = hideScrollbarEnabled,
+        headerStyle = headerStyle,
         updatedAt = updatedAt
     )
 
@@ -91,6 +97,7 @@ class SettingsPrefs(context: Context) {
             .putInt(KEY_DEFAULT_BG, snapshot.defaultNoteBackground)
             .putBoolean(KEY_SHOW_LINKS, snapshot.showLinksEnabled)
             .putBoolean(KEY_HIDE_SCROLLBAR, snapshot.hideScrollbarEnabled)
+            .putString(KEY_HEADER_STYLE, snapshot.headerStyle)
             .putLong(KEY_UPDATED_AT, snapshot.updatedAt)
             .apply()
     }
@@ -105,6 +112,7 @@ class SettingsPrefs(context: Context) {
         private const val KEY_DEFAULT_BG = "default_note_background"
         private const val KEY_SHOW_LINKS = "show_links_enabled"
         private const val KEY_HIDE_SCROLLBAR = "hide_scrollbar_enabled"
+        private const val KEY_HEADER_STYLE = "header_style"
         private const val KEY_UPDATED_AT = "settings_updated_at"
     }
 }

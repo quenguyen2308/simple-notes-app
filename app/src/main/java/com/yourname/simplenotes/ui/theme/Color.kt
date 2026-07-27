@@ -1,6 +1,7 @@
 package com.yourname.simplenotes.ui.theme
 
 import androidx.compose.ui.graphics.Color
+import com.yourname.simplenotes.ui.editor.NOTE_COLORS
 
 // "Bàn Làm Việc" (desk) palette — a corkboard-of-colored-notes identity, dark walnut desk at
 // night, light oak/kraft desk by day. Same accent personality (coral/amber/sage) in both.
@@ -23,8 +24,10 @@ val DeskSage       = Color(0xFF4FA47C) // tertiary accent
 val DeskOnAccent   = Color(0xFF2A1B14) // dark ink used as text/icon color on top of the accents
                                         // above — they're all light/mid hues in both themes.
 
-/** Shared color options for folders — used by both the create and edit folder dialogs. */
-val FOLDER_COLOR_PALETTE: List<Int> = listOf(
+/** Shared color options for folders — used by both the create and edit folder dialogs.
+ *  Includes the saturated folder tones plus the note background palette ([NOTE_COLORS]),
+ *  so a folder can be tinted with the same soft pastel used for note cards. */
+val FOLDER_COLOR_PALETTE: List<Int> = (listOf(
     // Blues
     0xFF1976D2.toInt(), 0xFF1565C0.toInt(), 0xFF0288D1.toInt(), 0xFF0097A7.toInt(),
     // Greens
@@ -37,4 +40,4 @@ val FOLDER_COLOR_PALETTE: List<Int> = listOf(
     0xFFF57C00.toInt(), 0xFFE65100.toInt(), 0xFFF9A825.toInt(), 0xFFF57F17.toInt(),
     // Browns / Greys
     0xFF5D4037.toInt(), 0xFF4E342E.toInt(), 0xFF546E7A.toInt(), 0xFF37474F.toInt()
-)
+) + NOTE_COLORS).distinct()

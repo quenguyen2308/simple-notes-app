@@ -64,8 +64,10 @@ import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.yourname.simplenotes.data.importer.ArchiveFormat
 import com.yourname.simplenotes.domain.model.Category
 import com.yourname.simplenotes.domain.model.Note
+import com.yourname.simplenotes.ui.settings.SettingsPrefs
 import com.yourname.simplenotes.ui.settings.SettingsScreen
 import com.yourname.simplenotes.ui.theme.FOLDER_COLOR_PALETTE
+import com.yourname.simplenotes.ui.theme.HeaderStyle
 import com.yourname.simplenotes.util.BiometricHelper
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -101,6 +103,7 @@ private fun MasonryNoteGrid(
     onNoteClick: (Note) -> Unit,
     onNoteLongPress: (Note) -> Unit,
     onShowActions: (Note) -> Unit,
+    headerStyle: HeaderStyle,
     modifier: Modifier = Modifier,
     columns: Int = 2
 ) {
@@ -120,6 +123,7 @@ private fun MasonryNoteGrid(
                         onClick       = { onNoteClick(note) },
                         onLongPress   = { onNoteLongPress(note) },
                         onShowActions = { onShowActions(note) },
+                        headerStyle   = headerStyle,
                         tilted        = true
                     )
                 }
@@ -142,6 +146,7 @@ private fun TimelineNoteRow(
     onClick: () -> Unit,
     onLongPress: () -> Unit,
     onShowActions: () -> Unit,
+    headerStyle: HeaderStyle,
     modifier: Modifier = Modifier
 ) {
     val dotColor = remember(note.backgroundColor) {
@@ -168,6 +173,7 @@ private fun TimelineNoteRow(
             onClick       = onClick,
             onLongPress   = onLongPress,
             onShowActions = onShowActions,
+            headerStyle   = headerStyle,
             modifier      = Modifier.weight(1f).padding(top = 3.dp, end = 8.dp, bottom = 3.dp)
         )
     }
@@ -240,6 +246,13 @@ fun NoteListScreen(
 
     var viewingFolderId by rememberSaveable { mutableStateOf<String?>(null) }
     var showSettings    by remember { mutableStateOf(false) }
+    val settingsPrefs   = remember { SettingsPrefs(context) }
+    var headerStyle by remember { mutableStateOf(HeaderStyle.fromStorageKey(settingsPrefs.headerStyle)) }
+    // Settings is shown as an overlay within this same composable (not a nav route), so re-read
+    // the picked style each time it's dismissed — there's no other signal that it may have changed.
+    LaunchedEffect(showSettings) {
+        if (!showSettings) headerStyle = HeaderStyle.fromStorageKey(settingsPrefs.headerStyle)
+    }
     var showRecycleBin  by remember { mutableStateOf(false) }
     var searchQuery     by remember { mutableStateOf("") }
     var showSearchBar   by remember { mutableStateOf(false) }
@@ -306,7 +319,8 @@ fun NoteListScreen(
             SortField.TITLE         -> compareBy { it.title.lowercase() }
         }
         val sorted = filtered.sortedWith(comparator)
-        if (sortAscending) sorted else sorted.reversed()
+        val ordered = if (sortAscending) sorted else sorted.reversed()
+        ordered.sortedByDescending { it.isPinned }
     }
 
     fun enterSelectionMode(noteId: String) { isSelectionMode = true; selectedNotes = setOf(noteId) }
@@ -547,6 +561,7 @@ fun NoteListScreen(
                         }
                         val allNoteIds = remember(currentNotes) { currentNotes.map { it.id }.toSet() }
                         SelectionActionBar(
+                            headerStyle      = headerStyle,
                             selectedCount    = selectedNotes.size,
                             allSelected       = selectedNotes.isNotEmpty() && selectedNotes == allNoteIds,
                             allSelectedLocked = allSelectedLocked,
@@ -582,27 +597,7 @@ fun NoteListScreen(
             },
             floatingActionButton = {
                 if (!isSelectionMode) {
-                    // "Bàn Làm Việc" sticky-note FAB: fixed tilt + flat hard shadow instead of
-                    // Material's soft blurred elevation, matching the note/folder cards.
-                    Box(modifier = Modifier.graphicsLayer(rotationZ = -4f)) {
-                        Box(
-                            Modifier
-                                .matchParentSize()
-                                .offset(x = 3.dp, y = 4.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(com.yourname.simplenotes.ui.theme.DeskCoralDark)
-                        )
-                        FloatingActionButton(
-                            onClick        = { onNewNote(viewingFolderId) },
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor   = MaterialTheme.colorScheme.onPrimary,
-                            shape          = RoundedCornerShape(16.dp),
-                            elevation      = FloatingActionButtonDefaults.elevation(defaultElevation = 0.dp),
-                            modifier       = Modifier.size(50.dp)
-                        ) {
-                            Icon(Icons.Default.Edit, "Ghi chú mới", modifier = Modifier.size(22.dp))
-                        }
-                    }
+                    StyledFab(style = headerStyle, onClick = { onNewNote(viewingFolderId) })
                 }
             }
         ) { padding ->
@@ -613,25 +608,16 @@ fun NoteListScreen(
                     .background(MaterialTheme.colorScheme.background)
             ) {
                 // ── Large centered header ────────────────────────────
-                Column(
-                    modifier              = Modifier.fillMaxWidth().padding(top = 28.dp, bottom = 4.dp),
-                    horizontalAlignment   = Alignment.CenterHorizontally
+                Box(
+                    modifier          = Modifier.fillMaxWidth().padding(top = 28.dp, bottom = 4.dp),
+                    contentAlignment  = Alignment.Center
                 ) {
-                    Text(
-                        text       = if (viewingFolderId == null) "Folders" else currentFolder?.name ?: "",
-                        fontSize   = 30.sp,
-                        fontWeight = FontWeight.Bold,
-                        color      = MaterialTheme.colorScheme.onBackground
-                    )
+                    val title = if (viewingFolderId == null) "Folders" else currentFolder?.name ?: ""
                     val subtitle = if (viewingFolderId == null)
                         "${categories.size} folders, $totalNotes notes"
                     else
                         "${currentNotes.size} notes"
-                    Text(
-                        text      = subtitle,
-                        fontSize  = 13.sp,
-                        color     = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    StyledNoteListHeader(style = headerStyle, title = title, subtitle = subtitle)
                 }
 
                 // ── Toolbar row ─────────────────────────────────────
@@ -639,24 +625,33 @@ fun NoteListScreen(
                     modifier          = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                        Icon(Icons.Default.Menu, "Menu", tint = MaterialTheme.colorScheme.onBackground)
-                    }
+                    StyledIconButton(
+                        style = headerStyle,
+                        onClick = { scope.launch { drawerState.open() } },
+                        icon = Icons.Default.Menu,
+                        contentDescription = "Menu"
+                    )
                     Spacer(Modifier.weight(1f))
-                    IconButton(onClick = {
-                        if (showSearchBar) {
-                            showSearchBar = false
-                            searchQuery = ""
-                        } else {
-                            showSearchBar = true
-                        }
-                    }) {
-                        Icon(Icons.Default.Search, "Tìm kiếm", tint = MaterialTheme.colorScheme.onBackground)
-                    }
+                    StyledIconButton(
+                        style = headerStyle,
+                        onClick = {
+                            if (showSearchBar) {
+                                showSearchBar = false
+                                searchQuery = ""
+                            } else {
+                                showSearchBar = true
+                            }
+                        },
+                        icon = Icons.Default.Search,
+                        contentDescription = "Tìm kiếm"
+                    )
                     Box {
-                        IconButton(onClick = { showMoreMenu = true }) {
-                            Icon(Icons.Default.MoreVert, "More", tint = MaterialTheme.colorScheme.onBackground)
-                        }
+                        StyledIconButton(
+                            style = headerStyle,
+                            onClick = { showMoreMenu = true },
+                            icon = Icons.Default.MoreVert,
+                            contentDescription = "More"
+                        )
                         DropdownMenu(
                             expanded        = showMoreMenu,
                             onDismissRequest = { showMoreMenu = false }
@@ -766,6 +761,7 @@ fun NoteListScreen(
                                 sortField     = sortField,
                                 sortAscending = sortAscending,
                                 viewType      = viewType,
+                                headerStyle   = headerStyle,
                                 onSortField   = { sortField = it },
                                 onToggleDir   = { sortAscending = !sortAscending },
                                 onToggleView  = {
@@ -802,7 +798,8 @@ fun NoteListScreen(
                                         if (isSelectionMode) toggleSelection(note.id)
                                         else enterSelectionMode(note.id)
                                     },
-                                    onShowActions = { note -> bottomSheetNote = note }
+                                    onShowActions = { note -> bottomSheetNote = note },
+                                    headerStyle   = headerStyle
                                 )
                             }
                         } else {
@@ -821,6 +818,7 @@ fun NoteListScreen(
                                         else enterSelectionMode(note.id)
                                     },
                                     onShowActions = { bottomSheetNote = note },
+                                    headerStyle = headerStyle,
                                     modifier = Modifier.padding(horizontal = 8.dp)
                                 )
                             }
@@ -834,6 +832,7 @@ fun NoteListScreen(
                         sortField     = sortField,
                         sortAscending = sortAscending,
                         viewType      = viewType,
+                        headerStyle   = headerStyle,
                         onSortField   = { sortField = it },
                         onToggleDir   = { sortAscending = !sortAscending },
                         onToggleView  = {
@@ -865,7 +864,8 @@ fun NoteListScreen(
                                         if (isSelectionMode) toggleSelection(note.id)
                                         else enterSelectionMode(note.id)
                                     },
-                                    onShowActions = { note -> bottomSheetNote = note }
+                                    onShowActions = { note -> bottomSheetNote = note },
+                                    headerStyle   = headerStyle
                                 )
                             }
                         }
@@ -889,6 +889,7 @@ fun NoteListScreen(
                                         else enterSelectionMode(note.id)
                                     },
                                     onShowActions = { bottomSheetNote = note },
+                                    headerStyle = headerStyle,
                                     modifier = Modifier.padding(horizontal = 8.dp)
                                 )
                             }
@@ -1371,11 +1372,13 @@ private fun NotesSortBar(
     sortField: SortField,
     sortAscending: Boolean,
     viewType: NoteViewType,
+    headerStyle: HeaderStyle,
     onSortField: (SortField) -> Unit,
     onToggleDir: () -> Unit,
     onToggleView: () -> Unit
 ) {
     var showDropdown by remember { mutableStateOf(false) }
+    val tint = styledIconTint(headerStyle)
 
     Row(
         modifier              = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
@@ -1385,7 +1388,7 @@ private fun NotesSortBar(
         Icon(
             Icons.AutoMirrored.Filled.Sort, null,
             modifier = Modifier.size(15.dp),
-            tint     = MaterialTheme.colorScheme.onSurfaceVariant
+            tint     = tint
         )
         Spacer(Modifier.width(4.dp))
 
@@ -1394,7 +1397,7 @@ private fun NotesSortBar(
             Text(
                 sortField.label,
                 fontSize = 12.sp,
-                color    = MaterialTheme.colorScheme.onSurfaceVariant,
+                color    = tint,
                 modifier = Modifier.clickable { showDropdown = true }
             )
             DropdownMenu(expanded = showDropdown, onDismissRequest = { showDropdown = false }) {
@@ -1421,7 +1424,7 @@ private fun NotesSortBar(
             if (sortAscending) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
             null,
             modifier = Modifier.size(15.dp).clickable { onToggleDir() },
-            tint     = MaterialTheme.colorScheme.onSurfaceVariant
+            tint     = tint
         )
 
         Spacer(Modifier.width(8.dp))
@@ -1433,7 +1436,7 @@ private fun NotesSortBar(
             if (viewType == NoteViewType.GRID) Icons.Default.ViewList else Icons.Default.GridView,
             contentDescription = if (viewType == NoteViewType.GRID) "List view" else "Grid view",
             modifier = Modifier.size(16.dp).clickable { onToggleView() },
-            tint     = MaterialTheme.colorScheme.onSurfaceVariant
+            tint     = tint
         )
     }
 }
@@ -1682,6 +1685,7 @@ private fun FolderDrawerItem(
 /** Selection action bar shown when notes are selected. */
 @Composable
 private fun SelectionActionBar(
+    headerStyle: HeaderStyle,
     selectedCount: Int,
     allSelected: Boolean,
     allSelectedLocked: Boolean,
@@ -1703,21 +1707,37 @@ private fun SelectionActionBar(
         ) {
             Text("$selectedCount đã chọn", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 8.dp))
             Row {
-                IconButton(onClick = onSelectAll) {
-                    Icon(
-                        if (allSelected) Icons.Default.Deselect else Icons.Default.SelectAll,
-                        if (allSelected) "Bỏ chọn tất cả" else "Chọn tất cả"
-                    )
-                }
-                IconButton(onClick = onMoveToFolder) { Icon(Icons.AutoMirrored.Filled.DriveFileMove, "Chuyển thư mục") }
-                IconButton(onClick = onLock) {
-                    Icon(
-                        if (allSelectedLocked) Icons.Default.LockOpen else Icons.Default.Lock,
-                        if (allSelectedLocked) "Mở khóa" else "Khóa"
-                    )
-                }
+                StyledIconButton(
+                    style = headerStyle,
+                    onClick = onSelectAll,
+                    icon = if (allSelected) Icons.Default.Deselect else Icons.Default.SelectAll,
+                    contentDescription = if (allSelected) "Bỏ chọn tất cả" else "Chọn tất cả",
+                    size = 40.dp, iconSize = 20.dp
+                )
+                StyledIconButton(
+                    style = headerStyle,
+                    onClick = onMoveToFolder,
+                    icon = Icons.AutoMirrored.Filled.DriveFileMove,
+                    contentDescription = "Chuyển thư mục",
+                    size = 40.dp, iconSize = 20.dp
+                )
+                StyledIconButton(
+                    style = headerStyle,
+                    onClick = onLock,
+                    icon = if (allSelectedLocked) Icons.Default.LockOpen else Icons.Default.Lock,
+                    contentDescription = if (allSelectedLocked) "Mở khóa" else "Khóa",
+                    size = 40.dp, iconSize = 20.dp
+                )
+                // Delete keeps Material's error-red tint regardless of style — a destructive
+                // action shouldn't lose its semantic color for the sake of theming.
                 IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, "Xóa", tint = MaterialTheme.colorScheme.error) }
-                IconButton(onClick = onDeselect) { Icon(Icons.Default.Close, "Bỏ chọn") }
+                StyledIconButton(
+                    style = headerStyle,
+                    onClick = onDeselect,
+                    icon = Icons.Default.Close,
+                    contentDescription = "Bỏ chọn",
+                    size = 40.dp, iconSize = 20.dp
+                )
             }
         }
     }

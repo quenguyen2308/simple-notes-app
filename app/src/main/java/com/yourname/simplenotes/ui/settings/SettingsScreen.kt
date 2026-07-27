@@ -27,6 +27,7 @@ import com.yourname.simplenotes.domain.model.Note
 import com.yourname.simplenotes.domain.model.NoteMetadata
 import com.yourname.simplenotes.sync.SyncScheduler
 import com.yourname.simplenotes.ui.editor.NoteColorPicker
+import com.yourname.simplenotes.ui.theme.HeaderStyle
 import com.yourname.simplenotes.ui.theme.isDynamicColorAvailable
 import com.yourname.simplenotes.util.toEditorHtml
 import java.util.UUID
@@ -68,6 +69,7 @@ fun SettingsScreen(
     var defaultBg     by remember { mutableStateOf(prefs.defaultNoteBackground) }
     var showLinksEnabled by remember { mutableStateOf(prefs.showLinksEnabled) }
     var hideScrollbarEnabled by remember { mutableStateOf(prefs.hideScrollbarEnabled) }
+    var headerStyle by remember { mutableStateOf(HeaderStyle.fromStorageKey(prefs.headerStyle)) }
     val archiveImportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -77,6 +79,7 @@ fun SettingsScreen(
     var showThemeDialog by remember { mutableStateOf(false) }
     var showLockMethodDialog by remember { mutableStateOf(false) }
     var showPageStyleDialog by remember { mutableStateOf(false) }
+    var showHeaderStyleDialog by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -112,6 +115,12 @@ fun SettingsScreen(
                     else    -> "Theo hệ thống"
                 },
                 onClick = { showThemeDialog = true }
+            )
+            RowDivider()
+            PlainRow(
+                title = "Giao diện tiêu đề & nút",
+                subtitle = headerStyle.label,
+                onClick = { showHeaderStyleDialog = true }
             )
             if (isDynamicColorAvailable) {
                 RowDivider()
@@ -422,6 +431,48 @@ fun SettingsScreen(
             },
             confirmButton = {
                 TextButton(onClick = { showPageStyleDialog = false }) { Text("Đóng") }
+            }
+        )
+    }
+
+    // ── Header/FAB style dialog ─────────────────────────────────────────
+    if (showHeaderStyleDialog) {
+        AlertDialog(
+            onDismissRequest = { showHeaderStyleDialog = false },
+            title = { Text("Giao diện tiêu đề & nút") },
+            text = {
+                Column {
+                    HeaderStyle.entries.forEach { style ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    headerStyle = style
+                                    prefs.headerStyle = style.storageKey
+                                    syncSettingsNow()
+                                    showHeaderStyleDialog = false
+                                }
+                                .padding(vertical = 12.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = headerStyle == style,
+                                onClick = {
+                                    headerStyle = style
+                                    prefs.headerStyle = style.storageKey
+                                    syncSettingsNow()
+                                    showHeaderStyleDialog = false
+                                },
+                                colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(style.label, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showHeaderStyleDialog = false }) { Text("Đóng") }
             }
         )
     }

@@ -343,7 +343,7 @@ fun NoteEditorScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .padding(horizontal = 12.dp)
+                    .padding(horizontal = 4.dp)
                     .padding(bottom = 4.dp),
                 color = MaterialTheme.colorScheme.surface,
                 shape = RoundedCornerShape(20.dp)
@@ -353,7 +353,7 @@ fun NoteEditorScreen(
                     NoteImageSection(
                         imageBlocks = viewModel.imageBlocks,
                         onRemoveImage = viewModel::removeImage,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
                     )
 
                     // Content area
@@ -371,7 +371,7 @@ fun NoteEditorScreen(
                             state = viewModel.richTextState,
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                                .padding(horizontal = 6.dp, vertical = 12.dp),
                             textStyle = MaterialTheme.typography.bodyLarge.copy(
                                 fontSize = 14.sp,
                                 color = MaterialTheme.colorScheme.onSurface

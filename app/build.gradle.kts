@@ -137,7 +137,7 @@ dependencies {
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
     // Rich text editor (Compose Rich Editor by Mohamed Rejeb)
-    implementation("com.mohamedrejeb.richeditor:richeditor-compose:1.0.0-rc05")
+    implementation("com.mohamedrejeb.richeditor:richeditor-compose:1.0.0-rc09")
 
     // Coil (image loading for Compose)
     implementation("io.coil-kt:coil-compose:2.5.0")

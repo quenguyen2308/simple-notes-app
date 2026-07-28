@@ -37,6 +37,10 @@ fun RichTextFormattingRow(
     var showBgColorPicker   by remember { mutableStateOf(false) }
     var showFontSizeMenu    by remember { mutableStateOf(false) }
 
+    // Read once per recomposition instead of once per button below — this row recomposes on
+    // every cursor move/keystroke since it's always visible in the bottom toolbar.
+    val currentStyle = state.currentSpanStyle
+
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -67,7 +71,7 @@ fun RichTextFormattingRow(
         FormatBtn(
             icon = Icons.Default.FormatBold,
             contentDescription = "In đậm",
-            isActive = state.currentSpanStyle.fontWeight == FontWeight.Bold,
+            isActive = currentStyle.fontWeight == FontWeight.Bold,
             onClick = { state.toggleSpanStyle(SpanStyle(fontWeight = FontWeight.Bold)) }
         )
 
@@ -75,7 +79,7 @@ fun RichTextFormattingRow(
         FormatBtn(
             icon = Icons.Default.FormatItalic,
             contentDescription = "In nghiêng",
-            isActive = state.currentSpanStyle.fontStyle == FontStyle.Italic,
+            isActive = currentStyle.fontStyle == FontStyle.Italic,
             onClick = { state.toggleSpanStyle(SpanStyle(fontStyle = FontStyle.Italic)) }
         )
 
@@ -83,7 +87,7 @@ fun RichTextFormattingRow(
         FormatBtn(
             icon = Icons.Default.FormatUnderlined,
             contentDescription = "Gạch dưới",
-            isActive = state.currentSpanStyle.textDecoration?.contains(TextDecoration.Underline) == true,
+            isActive = currentStyle.textDecoration?.contains(TextDecoration.Underline) == true,
             onClick = { state.toggleSpanStyle(SpanStyle(textDecoration = TextDecoration.Underline)) }
         )
 
@@ -91,7 +95,7 @@ fun RichTextFormattingRow(
         FormatBtn(
             icon = Icons.Default.StrikethroughS,
             contentDescription = "Gạch ngang",
-            isActive = state.currentSpanStyle.textDecoration?.contains(TextDecoration.LineThrough) == true,
+            isActive = currentStyle.textDecoration?.contains(TextDecoration.LineThrough) == true,
             onClick = { state.toggleSpanStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) }
         )
 
@@ -101,16 +105,16 @@ fun RichTextFormattingRow(
         FormatBtn(
             icon = Icons.Default.FormatColorText,
             contentDescription = "Màu chữ",
-            isActive = state.currentSpanStyle.color != Color.Unspecified,
-            iconTint = state.currentSpanStyle.color.takeIf { it != Color.Unspecified } ?: MaterialTheme.colorScheme.onSurfaceVariant,
+            isActive = currentStyle.color != Color.Unspecified,
+            iconTint = currentStyle.color.takeIf { it != Color.Unspecified } ?: MaterialTheme.colorScheme.onSurfaceVariant,
             onClick = { showTextColorPicker = true }
         )
         // Highlight colour — icon tinted with current highlight color
         FormatBtn(
             icon = Icons.Default.FormatColorFill,
             contentDescription = "Màu nền chữ",
-            isActive = state.currentSpanStyle.background != Color.Unspecified,
-            iconTint = state.currentSpanStyle.background.takeIf { it != Color.Unspecified } ?: MaterialTheme.colorScheme.onSurfaceVariant,
+            isActive = currentStyle.background != Color.Unspecified,
+            iconTint = currentStyle.background.takeIf { it != Color.Unspecified } ?: MaterialTheme.colorScheme.onSurfaceVariant,
             onClick = { showBgColorPicker = true }
         )
     }

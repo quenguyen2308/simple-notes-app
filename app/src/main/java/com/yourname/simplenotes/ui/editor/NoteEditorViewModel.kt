@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.compose.ui.text.TextRange
 import com.mohamedrejeb.richeditor.model.RichTextState
 import com.yourname.simplenotes.data.local.entities.ChecklistItem
 import com.yourname.simplenotes.data.local.entities.ContentBlock
@@ -138,6 +139,11 @@ class NoteEditorViewModel(
                         .filterIsInstance<ContentBlock.Text>()
                         .firstOrNull()?.htmlContent ?: ""
                     richTextState.setHtml(html)
+                    // setHtml() leaves the cursor/selection at the end of the loaded text,
+                    // and the editor scrolls to keep it in view on first composition — so a
+                    // long note opened straight to its last line instead of the top. Reset to
+                    // the start so opening a note always shows its beginning.
+                    richTextState.selection = TextRange(0)
                 }
             }
         }

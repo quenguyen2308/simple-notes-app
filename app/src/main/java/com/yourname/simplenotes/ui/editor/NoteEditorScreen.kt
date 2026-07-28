@@ -2,6 +2,8 @@ package com.yourname.simplenotes.ui.editor
 
 import android.content.Intent
 import android.provider.Settings
+import android.widget.EditText
+import androidx.core.text.HtmlCompat
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -31,7 +33,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.mohamedrejeb.richeditor.ui.material3.RichTextEditorDefaults
 import com.yourname.simplenotes.util.BiometricHelper
 import org.koin.androidx.compose.koinViewModel
 import java.text.SimpleDateFormat
@@ -96,6 +97,8 @@ fun NoteEditorScreen(
     var showCategoryDialog    by remember { mutableStateOf(false) }
     var showLabelsDialog      by remember { mutableStateOf(false) }
     var showNoPasscodeDialog  by remember { mutableStateOf(false) }
+    /** Reference to the EditText inside AndroidRichTextEditor, used by the toolbar. */
+    var editTextRef            by remember { mutableStateOf<EditText?>(null) }
 
     val topBarLabel = remember(viewModel.createdAtMs) {
         val ms = if (viewModel.createdAtMs > 0L) viewModel.createdAtMs else System.currentTimeMillis()
@@ -191,7 +194,7 @@ fun NoteEditorScreen(
                                                 appendLine("${if (item.isCompleted) "☑" else "☐"} ${item.text}")
                                             }
                                         } else {
-                                            append(viewModel.richTextState.annotatedString.text)
+                                            append(HtmlCompat.fromHtml(viewModel.htmlContent, HtmlCompat.FROM_HTML_MODE_COMPACT))
                                         }
                                     }
                                     context.startActivity(Intent.createChooser(
@@ -269,7 +272,7 @@ fun NoteEditorScreen(
                                 .width(1.dp)
                                 .background(MaterialTheme.colorScheme.outlineVariant)
                         )
-                        RichTextFormattingRow(state = viewModel.richTextState)
+                        RichTextFormattingRow(editText = editTextRef)
                     }
                 }
             }
@@ -367,21 +370,15 @@ fun NoteEditorScreen(
                             modifier = Modifier.fillMaxSize()
                         )
                     } else {
-                        com.mohamedrejeb.richeditor.ui.material3.RichTextEditor(
-                            state = viewModel.richTextState,
+                        AndroidRichTextEditor(
+                            html = viewModel.htmlContent,
+                            onHtmlChange = viewModel::onHtmlContentChange,
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 14.sp),
+                            textColor = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier
                                 .fillMaxSize()
                                 .padding(horizontal = 6.dp, vertical = 12.dp),
-                            textStyle = MaterialTheme.typography.bodyLarge.copy(
-                                fontSize = 14.sp,
-                                color = MaterialTheme.colorScheme.onSurface
-                            ),
-                            colors = RichTextEditorDefaults.richTextEditorColors(
-                                containerColor = Color.Transparent,
-                                focusedIndicatorColor = Color.Transparent,
-                                unfocusedIndicatorColor = Color.Transparent,
-                                cursorColor = MaterialTheme.colorScheme.primary,
-                            )
+                            onEditTextReady = { editTextRef = it }
                         )
                     }
                 }

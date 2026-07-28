@@ -50,3 +50,12 @@ local.properties
 *.jks
 google-services.json
 apk-releases
+claude
+docs
+plans
+scripts
+.agents
+.husky
+.github
+guide
+.kotlin

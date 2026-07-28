@@ -1,14 +1,12 @@
 package com.yourname.simplenotes.ui.editor
 
 import android.content.Context
-import androidx.core.text.HtmlCompat
+import android.text.Html
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.compose.ui.text.TextRange
-import com.mohamedrejeb.richeditor.model.RichTextState
 import com.yourname.simplenotes.data.local.entities.ChecklistItem
 import com.yourname.simplenotes.data.local.entities.ContentBlock
 import com.yourname.simplenotes.data.repository.CategoryRepository
@@ -17,7 +15,7 @@ import com.yourname.simplenotes.domain.model.Category
 import com.yourname.simplenotes.domain.model.Note
 import com.yourname.simplenotes.domain.model.NoteMetadata
 import com.yourname.simplenotes.ui.settings.SettingsPrefs
-import com.yourname.simplenotes.util.toEditorHtml
+import com.yourname.simplenotes.util.HtmlSpannableConverter
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -38,8 +36,9 @@ class NoteEditorViewModel(
     var title by mutableStateOf("")
         private set
 
-    /** Owned by the Composable layer; the ViewModel reads HTML from it on save. */
-    val richTextState = RichTextState()
+    /** Current HTML content of the rich-text editor. Updated by the EditText on every change. */
+    var htmlContent by mutableStateOf("")
+        private set
 
     var selectedCategoryId by mutableStateOf<String?>(null)
         private set
@@ -107,7 +106,7 @@ class NoteEditorViewModel(
             selectedCategoryId = initialCategoryId
             backgroundColor = settingsPrefs.defaultNoteBackground
             if (!sharedText.isNullOrBlank()) {
-                richTextState.setHtml(sharedText.toEditorHtml())
+                htmlContent = HtmlSpannableConverter.plainTextToHtml(sharedText)
             }
             return
         }
@@ -134,22 +133,20 @@ class NoteEditorViewModel(
                     isChecklistMode = true
                     checklistItems = checklistBlock.items
                 } else {
-                    // Restore rich text state from the first Text block's HTML
-                    val html = note.contentBlocks
+                    // Restore rich text HTML from the first Text block
+                    htmlContent = note.contentBlocks
                         .filterIsInstance<ContentBlock.Text>()
                         .firstOrNull()?.htmlContent ?: ""
-                    richTextState.setHtml(html)
-                    // setHtml() leaves the cursor/selection at the end of the loaded text,
-                    // and the editor scrolls to keep it in view on first composition — so a
-                    // long note opened straight to its last line instead of the top. Reset to
-                    // the start so opening a note always shows its beginning.
-                    richTextState.selection = TextRange(0)
                 }
             }
         }
     }
 
     fun onTitleChange(value: String) { title = value }
+
+    /** Called by AndroidRichTextEditor on every text change. */
+    fun onHtmlContentChange(html: String) { htmlContent = html }
+
     fun onCategoryChange(id: String?) { selectedCategoryId = id }
     fun onBackgroundColorChange(color: Int) { backgroundColor = color }
     fun onPinToggle() { isPinned = !isPinned }
@@ -225,17 +222,16 @@ class NoteEditorViewModel(
             val hasContent = if (isChecklistMode)
                 checklistItems.any { it.text.isNotBlank() }
             else
-                richTextState.annotatedString.text.isNotBlank()
+                Html.fromHtml(htmlContent, Html.FROM_HTML_MODE_COMPACT)
+                    .toString().isNotBlank()
             if (title.isBlank() && !hasContent && imageBlocks.isEmpty()) return
         }
 
         viewModelScope.launch {
-            val html = richTextState.toHtml()
-            // richTextState.annotatedString.text replaces '\n' with ' ' internally (paragraph
-            // breaks are structural ParagraphStyle spans, not literal newlines), so the plain
-            // text used for search/preview/sync must be rebuilt from the HTML instead, which
-            // does encode each paragraph as its own <p>/<br> block.
-            val plainText = HtmlCompat.fromHtml(html, HtmlCompat.FROM_HTML_MODE_COMPACT).toString().trim()
+            val html = htmlContent
+            // Rebuild plain text from HTML for search/preview/sync
+            val plainText = Html.fromHtml(html, Html.FROM_HTML_MODE_COMPACT).toString()
+                .toString().trim()
 
             // Build content blocks based on current mode; imageBlocks is the source of truth
             val contentBlocks = if (isChecklistMode) {

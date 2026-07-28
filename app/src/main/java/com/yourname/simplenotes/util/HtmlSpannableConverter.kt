@@ -30,9 +30,6 @@ object HtmlSpannableConverter {
     private const val TAG_FONT = "font"
     private const val TAG_BIG = "big"
     private const val TAG_SMALL = "small"
-    private const val TAG_BR = "br"
-    private const val TAG_P = "p"
-    private const val TAG_SPAN = "span"
 
     private const val ATTR_COLOR = "color"
     private const val ATTR_BGCOLOR = "bgcolor"
@@ -44,11 +41,18 @@ object HtmlSpannableConverter {
         if (html.isBlank()) return SpannableStringBuilder()
 
         return try {
-            val spanned = Html.fromHtml(html, Html.FROM_HTML_MODE_LEGACY, null, TagHandler())
+            // spannableToHtml() only ever emits <br> for line breaks (no <p> wrapping) — but
+            // strip any <p>/</p> anyway so notes saved by an older buggy version (which wrapped
+            // every line in <p> *in addition to* the <br> between them) self-heal instead of
+            // rendering extra blank lines forever: Html.fromHtml adds its own spacing around
+            // block-level <p> tags on top of the already-present <br>, compounding every time
+            // such a note is reopened.
+            val cleaned = html.replace(Regex("</?p>", RegexOption.IGNORE_CASE), "")
+            val spanned = Html.fromHtml(cleaned, Html.FROM_HTML_MODE_LEGACY, null, TagHandler())
             val spannable = SpannableStringBuilder(spanned)
 
             // Post-process <font size="N"> → RelativeSizeSpan
-            processFontSizeTags(spannable, html)
+            processFontSizeTags(spannable, cleaned)
 
             spannable
         } catch (e: Exception) {
@@ -68,13 +72,17 @@ object HtmlSpannableConverter {
      *
      * Note: does NOT use Html.fromHtml() — that API adds extra newlines around <p> tags
      * which would cause double-line-break artifacts in the note list preview.
+     *
+     * <p>/</p> are stripped to nothing (not converted to a newline): spannableToHtml() only
+     * ever emits <br> for line breaks now, but notes saved by an older version — which wrapped
+     * every line in <p> *in addition to* the <br> between them — would otherwise still show a
+     * spurious blank line here until the note is reopened and resaved.
      */
     fun htmlToPlainText(html: String): String {
         if (html.isBlank()) return ""
         return html
             .replace("<br>", "\n", ignoreCase = true)
-            .replace("<p>", "", ignoreCase = true)
-            .replace("</p>", "\n", ignoreCase = true)
+            .replace(Regex("</?p>", RegexOption.IGNORE_CASE), "")
             .replace(Regex("<[^>]+>"), "")
             .replace("&lt;", "<")
             .replace("&gt;", ">")
@@ -84,44 +92,30 @@ object HtmlSpannableConverter {
             .trim()
     }
 
-    /** Converts Spannable (from EditText) back to HTML string for storage. */
+    /**
+     * Converts Spannable (from EditText) back to HTML string for storage.
+     *
+     * Line breaks are represented with a single `<br>` per newline — nothing else. An earlier
+     * version also wrapped each line in `<p>...</p>`, which double-marked every line break
+     * (the paragraph boundary *and* the `<br>` both represented the same newline); reloading
+     * that HTML through Html.fromHtml then added its own spacing around the `<p>` tags on top
+     * of the explicit `<br>`, so the gap between lines grew a little more each time a note was
+     * reopened and re-saved. See htmlToSpannable() for handling notes already saved that way.
+     */
     fun spannableToHtml(spannable: Spannable): String {
         if (spannable.isEmpty()) return ""
 
         val builder = StringBuilder()
         var i = 0
         val len = spannable.length
-        var inParagraph = false
-
-        fun openParagraph() {
-            if (!inParagraph) {
-                builder.append("<p>")
-                inParagraph = true
-            }
-        }
-
-        fun closeParagraph() {
-            if (inParagraph) {
-                builder.append("</p>")
-                inParagraph = false
-            }
-        }
 
         while (i < len) {
             val char = spannable[i]
-            val prevChar = if (i > 0) spannable[i - 1] else '\n'
 
-            // Handle newlines: flush paragraph
             if (char == '\n') {
-                closeParagraph()
                 builder.append("<br>")
                 i++
                 continue
-            }
-
-            // Opening a new paragraph (previous was newline or start)
-            if (prevChar == '\n') {
-                openParagraph()
             }
 
             val spans = spannable.getSpans(i, i + 1, Any::class.java)
@@ -200,20 +194,9 @@ object HtmlSpannableConverter {
                 builder.append(">")
             }
 
-            // Check if paragraph should close after this character (next is newline or span ends here)
-            val nextIsNewline = nextPos < len && spannable[nextPos] == '\n'
-            val paragraphShouldClose = nextIsNewline || spans.any { span ->
-                spannable.getSpanStart(span) <= i && spannable.getSpanEnd(span) == nextPos
-            }
-            if (paragraphShouldClose) {
-                closeParagraph()
-            }
-
             i++
         }
 
-        // Close any open paragraph at end
-        closeParagraph()
         return builder.toString()
     }
 

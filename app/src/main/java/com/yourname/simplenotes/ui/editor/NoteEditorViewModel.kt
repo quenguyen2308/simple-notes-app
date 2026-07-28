@@ -25,6 +25,10 @@ import java.util.Date
 import java.util.Locale
 import java.util.UUID
 
+/** Keystrokes within this window collapse into a single undo step. */
+private const val HISTORY_COALESCE_MS = 700L
+private const val MAX_HISTORY_SIZE = 100
+
 class NoteEditorViewModel(
     private val repository: NoteRepository,
     private val categoryRepository: CategoryRepository,
@@ -39,6 +43,38 @@ class NoteEditorViewModel(
     /** Current HTML content of the rich-text editor. Updated by the EditText on every change. */
     var htmlContent by mutableStateOf("")
         private set
+
+    // ─── Undo/redo history ────────────────────────────────────────────────────
+    // Snapshots of htmlContent. Pushes are coalesced by time so a burst of keystrokes collapses
+    // into one undo step instead of one per character.
+
+    private val undoStack = ArrayDeque<String>()
+    private val redoStack = ArrayDeque<String>()
+    private var lastHistoryPushAt = 0L
+
+    var canUndo by mutableStateOf(false)
+        private set
+    var canRedo by mutableStateOf(false)
+        private set
+
+    private fun refreshHistoryFlags() {
+        canUndo = undoStack.isNotEmpty()
+        canRedo = redoStack.isNotEmpty()
+    }
+
+    fun undo() {
+        val previous = undoStack.removeLastOrNull() ?: return
+        redoStack.addLast(htmlContent)
+        htmlContent = previous
+        refreshHistoryFlags()
+    }
+
+    fun redo() {
+        val next = redoStack.removeLastOrNull() ?: return
+        undoStack.addLast(htmlContent)
+        htmlContent = next
+        refreshHistoryFlags()
+    }
 
     var selectedCategoryId by mutableStateOf<String?>(null)
         private set
@@ -99,6 +135,9 @@ class NoteEditorViewModel(
      * share sheet (e.g. Samsung Notes, Easy Note) — ignored for existing notes.
      */
     fun load(id: String?, initialCategoryId: String? = null, sharedText: String? = null) {
+        undoStack.clear()
+        redoStack.clear()
+        refreshHistoryFlags()
         if (id == null || id == "new") {
             noteId = UUID.randomUUID().toString()
             createdAt = System.currentTimeMillis()
@@ -145,7 +184,18 @@ class NoteEditorViewModel(
     fun onTitleChange(value: String) { title = value }
 
     /** Called by AndroidRichTextEditor on every text change. */
-    fun onHtmlContentChange(html: String) { htmlContent = html }
+    fun onHtmlContentChange(html: String) {
+        if (html == htmlContent) return
+        val now = System.currentTimeMillis()
+        if (now - lastHistoryPushAt > HISTORY_COALESCE_MS) {
+            undoStack.addLast(htmlContent)
+            if (undoStack.size > MAX_HISTORY_SIZE) undoStack.removeFirst()
+        }
+        lastHistoryPushAt = now
+        redoStack.clear()
+        htmlContent = html
+        refreshHistoryFlags()
+    }
 
     fun onCategoryChange(id: String?) { selectedCategoryId = id }
     fun onBackgroundColorChange(color: Int) { backgroundColor = color }

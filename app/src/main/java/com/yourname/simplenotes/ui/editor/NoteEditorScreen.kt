@@ -15,7 +15,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -27,7 +26,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -39,27 +37,6 @@ import com.yourname.simplenotes.util.BiometricHelper
 import org.koin.androidx.compose.koinViewModel
 import java.text.SimpleDateFormat
 import java.util.*
-
-/** Icon-over-label bottom toolbar button (Image / Checkbox / Màu). */
-@Composable
-private fun LabeledToolbarButton(
-    icon: ImageVector,
-    label: String,
-    isActive: Boolean = false,
-    onClick: () -> Unit
-) {
-    val color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .clip(RoundedCornerShape(14.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 6.dp)
-    ) {
-        Icon(icon, contentDescription = label, tint = color, modifier = Modifier.size(20.dp))
-        Text(label, fontSize = 10.sp, color = color)
-    }
-}
 
 /** Small pill chip for the time/tag row under the title (e.g. "14:30, Hôm nay", "#Tag"). */
 @Composable
@@ -245,50 +222,22 @@ fun NoteEditorScreen(
                 shadowElevation = 6.dp,
                 tonalElevation  = 2.dp
             ) {
-                Row(
+                EditorToolbar(
+                    editText = editTextRef,
+                    isChecklistActive = viewModel.isChecklistMode,
+                    canUndo = viewModel.canUndo,
+                    canRedo = viewModel.canRedo,
+                    onUndo = viewModel::undo,
+                    onRedo = viewModel::redo,
+                    onChecklistToggle = viewModel::toggleChecklistMode,
+                    onInsertImage = { galleryLauncher.launch("image/*") },
+                    onOpenNoteColorPicker = { showColorDialog = true },
+                    onHtmlChange = viewModel::onHtmlContentChange,
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 6.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    verticalAlignment     = Alignment.CenterVertically
-                ) {
-                    // Insert image
-                    LabeledToolbarButton(
-                        icon    = Icons.Default.Image,
-                        label   = "Image",
-                        onClick = { galleryLauncher.launch("image/*") }
-                    )
-                    // Toggle checklist / rich-text mode
-                    LabeledToolbarButton(
-                        icon     = if (viewModel.isChecklistMode) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
-                        label    = "Checkbox",
-                        isActive = viewModel.isChecklistMode,
-                        onClick  = viewModel::toggleChecklistMode
-                    )
-                    // Background color
-                    LabeledToolbarButton(
-                        icon    = Icons.Default.Palette,
-                        label   = "Màu",
-                        onClick = { showColorDialog = true }
-                    )
-
-                    // Rich-text formatting controls (hidden in checklist mode) share the
-                    // same floating pill instead of a second stacked bar.
-                    if (!viewModel.isChecklistMode) {
-                        Box(
-                            modifier = Modifier
-                                .padding(horizontal = 4.dp)
-                                .height(24.dp)
-                                .width(1.dp)
-                                .background(MaterialTheme.colorScheme.outlineVariant)
-                        )
-                        RichTextFormattingRow(
-                            editText = editTextRef,
-                            onHtmlChange = viewModel::onHtmlContentChange
-                        )
-                    }
-                }
+                        .padding(horizontal = 6.dp, vertical = 4.dp)
+                )
             }
         }
     ) { padding ->

@@ -10,6 +10,7 @@ import android.text.style.ForegroundColorSpan
 import android.text.style.RelativeSizeSpan
 import android.text.style.StrikethroughSpan
 import android.text.style.StyleSpan
+import android.text.style.URLSpan
 import android.text.style.UnderlineSpan
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
@@ -24,7 +25,7 @@ import java.util.regex.Pattern
 
 /**
  * Converts between HTML strings and Android Spannable for rich-text editing.
- * Supports: bold, italic, underline, strikethrough, foreground color, background color, font size.
+ * Supports: bold, italic, underline, strikethrough, foreground color, background color, font size, links.
  *
  * EditText stores rich text as Spannable internally. This converter serializes it to/from
  * the same HTML format the app uses for Drive sync, so existing saved notes load correctly.
@@ -39,10 +40,12 @@ object HtmlSpannableConverter {
     private const val TAG_FONT = "font"
     private const val TAG_BIG = "big"
     private const val TAG_SMALL = "small"
+    private const val TAG_LINK = "a"
 
     private const val ATTR_COLOR = "color"
     private const val ATTR_BGCOLOR = "bgcolor"
     private const val ATTR_SIZE = "size"
+    private const val ATTR_HREF = "href"
 
     /** Converts EditText HTML output to Spannable for display/editing in EditText. */
     @Suppress("DEPRECATION")
@@ -173,6 +176,7 @@ object HtmlSpannableConverter {
             val bg = spans.filterIsInstance<BackgroundColorSpan>().firstOrNull()
             val sizeUp = spans.filterIsInstance<RelativeSizeSpan>().filter { it.sizeChange > 1f }.minByOrNull { it.sizeChange }
             val sizeDown = spans.filterIsInstance<RelativeSizeSpan>().filter { it.sizeChange < 1f }.maxByOrNull { it.sizeChange }
+            val link = spans.filterIsInstance<URLSpan>().firstOrNull()
 
             // A span must only open a tag at its own start offset and close it at its own end
             // offset — checking mere presence at position i (as an earlier version of this code
@@ -184,6 +188,9 @@ object HtmlSpannableConverter {
             fun startsHere(span: Any?) = span != null && spannable.getSpanStart(span) == i
             fun endsHere(span: Any?) = span != null && spannable.getSpanEnd(span) == nextPos
 
+            if (startsHere(link)) {
+                builder.append("<a href=\"").append((link as URLSpan).url.replace("\"", "&quot;")).append("\">")
+            }
             val openBold = startsHere(bold)
             val openItalic = startsHere(italic)
             if (openBold || openItalic) {
@@ -237,6 +244,7 @@ object HtmlSpannableConverter {
                 if (closeItalic) builder.append("i")
                 builder.append(">")
             }
+            if (endsHere(link)) builder.append("</a>")
 
             i++
         }
@@ -298,6 +306,14 @@ object HtmlSpannableConverter {
                 }
                 TAG_FONT -> {
                     handleFontTag(opening, output, xmlReader)
+                }
+                TAG_LINK -> {
+                    if (opening) {
+                        val href = getXmlAttr(xmlReader, ATTR_HREF)
+                        if (href != null) setSpan(output, URLSpan(href))
+                    } else {
+                        removeLastSpanOfType(output, URLSpan::class.java)
+                    }
                 }
             }
         }
@@ -421,6 +437,7 @@ object HtmlSpannableConverter {
                     is ForegroundColorSpan -> SpanStyle(color = Color(span.foregroundColor))
                     is BackgroundColorSpan -> SpanStyle(background = Color(span.backgroundColor))
                     is RelativeSizeSpan -> SpanStyle(fontSize = (14f * span.sizeChange).sp)
+                    is URLSpan -> SpanStyle(color = Color(0xFF1259C3), textDecoration = TextDecoration.Underline)
                     else -> null
                 }
                 if (style != null) addStyle(style, start, end)

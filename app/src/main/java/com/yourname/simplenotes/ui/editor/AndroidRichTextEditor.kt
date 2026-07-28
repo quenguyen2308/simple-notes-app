@@ -9,6 +9,7 @@ import android.text.style.ForegroundColorSpan
 import android.text.style.RelativeSizeSpan
 import android.text.style.StrikethroughSpan
 import android.text.style.StyleSpan
+import android.text.style.URLSpan
 import android.text.style.UnderlineSpan
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
@@ -103,7 +104,7 @@ fun AndroidRichTextEditor(
                 val spannable = HtmlSpannableConverter.htmlToSpannable(html)
                 // Preserve the full selection range (not just a collapsed cursor) across this
                 // reparse — the toolbar's format buttons trigger this same path (see
-                // RichTextFormattingRow.syncHtml), so collapsing to a point here would deselect
+                // EditorToolbar.syncHtml), so collapsing to a point here would deselect
                 // the user's text after every single toggle, forcing them to reselect before
                 // applying a second style (e.g. bold then italic on the same word).
                 val selStart = minOf(editText.selectionStart, editText.selectionEnd).coerceIn(0, spannable.length)
@@ -132,6 +133,15 @@ fun AndroidRichTextEditor(
 private fun dpToPx(ctx: android.content.Context, dp: Int): Int =
     (dp * ctx.resources.displayMetrics.density).roundToInt()
 
+/** Fixed highlight color used by the toolbar's toggleable Highlight button (as opposed to the
+ *  arbitrary background color picker, which uses [setBackgroundColor] with any color). */
+val HIGHLIGHT_COLOR = Color(0xFFFFF59D)
+
+/** Scale used to render a "heading" line — whole-line [RelativeSizeSpan] + bold. */
+private const val HEADING_SCALE = 1.4f
+
+private const val BULLET_PREFIX = "• "
+
 /**
  * Represents the current formatting state at the cursor position in an EditText.
  */
@@ -140,6 +150,7 @@ data class FormatState(
     val isItalic: Boolean = false,
     val isUnderline: Boolean = false,
     val isStrikethrough: Boolean = false,
+    val isHighlighted: Boolean = false,
     val textColor: Color? = null,
     val backgroundColor: Color? = null,
     val fontSizePx: Int? = null
@@ -187,8 +198,8 @@ fun getFormatState(editText: android.widget.EditText): FormatState {
 
     return FormatState(
         isBold = bold, isItalic = italic, isUnderline = underline,
-        isStrikethrough = strike, textColor = fgColor,
-        backgroundColor = bgColor, fontSizePx = fontSize
+        isStrikethrough = strike, isHighlighted = bgColor == HIGHLIGHT_COLOR,
+        textColor = fgColor, backgroundColor = bgColor, fontSizePx = fontSize
     )
 }
 
@@ -281,6 +292,127 @@ fun setFontSize(editText: android.widget.EditText, sizePx: Int) {
     text.getSpans(selStart, selEnd, RelativeSizeSpan::class.java).forEach { text.removeSpan(it) }
     val scale = sizePx / 14f
     text.setSpan(RelativeSizeSpan(scale), selStart, selEnd, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+}
+
+/**
+ * Toggles a fixed-color highlight (like a text marker) at the current selection.
+ * Distinct from [setBackgroundColor], which sets an arbitrary background color from a picker.
+ */
+fun toggleHighlight(editText: android.widget.EditText) {
+    val selStart = editText.selectionStart
+    val selEnd = editText.selectionEnd
+    if (selStart < 0 || selStart == selEnd) return
+    val text = editText.text as? Spannable ?: return
+    val existing = text.getSpans(selStart, selEnd, BackgroundColorSpan::class.java)
+        .filter { it.backgroundColor == HIGHLIGHT_COLOR.toArgb() }
+    if (existing.isNotEmpty()) {
+        existing.forEach { text.removeSpan(it) }
+    } else {
+        text.setSpan(BackgroundColorSpan(HIGHLIGHT_COLOR.toArgb()), selStart, selEnd, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+    }
+}
+
+/**
+ * Toggles "heading" styling (bold + larger text) on the whole line the cursor is on.
+ */
+fun toggleHeading(editText: android.widget.EditText) {
+    val text = editText.text as? Spannable ?: return
+    val pos = editText.selectionStart.coerceIn(0, text.length)
+    val start = lineStart(text, pos)
+    val end = lineEnd(text, pos)
+    if (start >= end) return
+
+    if (isHeadingLine(editText)) {
+        text.getSpans(start, end, RelativeSizeSpan::class.java)
+            .filter { it.sizeChange == HEADING_SCALE && text.getSpanStart(it) == start && text.getSpanEnd(it) == end }
+            .forEach { text.removeSpan(it) }
+        text.getSpans(start, end, StyleSpan::class.java)
+            .filter { it.style == Typeface.BOLD && text.getSpanStart(it) == start && text.getSpanEnd(it) == end }
+            .forEach { text.removeSpan(it) }
+    } else {
+        text.setSpan(RelativeSizeSpan(HEADING_SCALE), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        text.setSpan(StyleSpan(Typeface.BOLD), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+    }
+}
+
+/** Whether the line the cursor is on is currently styled as a heading. */
+fun isHeadingLine(editText: android.widget.EditText): Boolean {
+    val text = editText.text as? Spannable ?: return false
+    val pos = editText.selectionStart.coerceIn(0, text.length)
+    val start = lineStart(text, pos)
+    val end = lineEnd(text, pos)
+    if (start >= end) return false
+    return text.getSpans(start, end, RelativeSizeSpan::class.java)
+        .any { it.sizeChange == HEADING_SCALE && text.getSpanStart(it) == start && text.getSpanEnd(it) == end }
+}
+
+/** Toggles a "• " bullet prefix on the line the cursor is on. */
+fun toggleBulletList(editText: android.widget.EditText) {
+    val editable = editText.text ?: return
+    val pos = editText.selectionStart.coerceIn(0, editable.length)
+    val start = lineStart(editable, pos)
+    if (isBulletLine(editText)) {
+        editable.delete(start, start + BULLET_PREFIX.length)
+    } else {
+        editable.insert(start, BULLET_PREFIX)
+    }
+}
+
+/** Whether the line the cursor is on already starts with the bullet prefix. */
+fun isBulletLine(editText: android.widget.EditText): Boolean {
+    val text = editText.text ?: return false
+    val pos = editText.selectionStart.coerceIn(0, text.length)
+    val start = lineStart(text, pos)
+    return start + BULLET_PREFIX.length <= text.length &&
+        text.subSequence(start, start + BULLET_PREFIX.length).toString() == BULLET_PREFIX
+}
+
+/** Whether the current selection is entirely covered by a link ([URLSpan]). */
+fun hasLinkInSelection(editText: android.widget.EditText): Boolean {
+    val start = editText.selectionStart
+    val end = editText.selectionEnd
+    if (start < 0 || start == end) return false
+    val text = editText.text as? Spannable ?: return false
+    return text.getSpans(start, end, URLSpan::class.java).any {
+        text.getSpanStart(it) <= start && text.getSpanEnd(it) >= end
+    }
+}
+
+/** Turns the current selection into a link pointing at [url], replacing any existing link there. */
+fun applyLink(editText: android.widget.EditText, url: String) {
+    val start = editText.selectionStart
+    val end = editText.selectionEnd
+    if (start < 0 || start == end || url.isBlank()) return
+    val text = editText.text as? Spannable ?: return
+    text.getSpans(start, end, URLSpan::class.java).forEach { text.removeSpan(it) }
+    text.setSpan(URLSpan(url), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+    setSpan<ForegroundColorSpan>(text, start, end) { ForegroundColorSpan(LINK_COLOR) }
+}
+
+/** Removes the link (and its color) covering the current selection, keeping the plain text. */
+fun removeLink(editText: android.widget.EditText) {
+    val start = editText.selectionStart
+    val end = editText.selectionEnd
+    if (start < 0 || start == end) return
+    val text = editText.text as? Spannable ?: return
+    text.getSpans(start, end, URLSpan::class.java).forEach { text.removeSpan(it) }
+    text.getSpans(start, end, ForegroundColorSpan::class.java)
+        .filter { it.foregroundColor == LINK_COLOR }
+        .forEach { text.removeSpan(it) }
+}
+
+private const val LINK_COLOR = 0xFF1259C3.toInt()
+
+private fun lineStart(text: CharSequence, pos: Int): Int {
+    var i = pos.coerceIn(0, text.length)
+    while (i > 0 && text[i - 1] != '\n') i--
+    return i
+}
+
+private fun lineEnd(text: CharSequence, pos: Int): Int {
+    var i = pos.coerceIn(0, text.length)
+    while (i < text.length && text[i] != '\n') i++
+    return i
 }
 
 // ── Internal helpers ─────────────────────────────────────────────────────────

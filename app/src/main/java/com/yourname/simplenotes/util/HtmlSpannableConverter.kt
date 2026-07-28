@@ -69,10 +69,40 @@ object HtmlSpannableConverter {
         val builder = StringBuilder()
         var i = 0
         val len = spannable.length
+        var inParagraph = false
+
+        fun openParagraph() {
+            if (!inParagraph) {
+                builder.append("<p>")
+                inParagraph = true
+            }
+        }
+
+        fun closeParagraph() {
+            if (inParagraph) {
+                builder.append("</p>")
+                inParagraph = false
+            }
+        }
 
         while (i < len) {
-            val spans = spannable.getSpans(i, i + 1, Any::class.java)
+            val char = spannable[i]
+            val prevChar = if (i > 0) spannable[i - 1] else '\n'
 
+            // Handle newlines: flush paragraph
+            if (char == '\n') {
+                closeParagraph()
+                builder.append("<br>")
+                i++
+                continue
+            }
+
+            // Opening a new paragraph (previous was newline or start)
+            if (prevChar == '\n') {
+                openParagraph()
+            }
+
+            val spans = spannable.getSpans(i, i + 1, Any::class.java)
             val bold = spans.filterIsInstance<StyleSpan>().find { it.style == Typeface.BOLD }
             val italic = spans.filterIsInstance<StyleSpan>().find { it.style == Typeface.ITALIC }
             val underline = spans.find { it is UnderlineSpan }
@@ -81,13 +111,6 @@ object HtmlSpannableConverter {
             val bg = spans.filterIsInstance<BackgroundColorSpan>().firstOrNull()
             val sizeUp = spans.filterIsInstance<RelativeSizeSpan>().filter { it.sizeChange > 1f }.minByOrNull { it.sizeChange }
             val sizeDown = spans.filterIsInstance<RelativeSizeSpan>().filter { it.sizeChange < 1f }.maxByOrNull { it.sizeChange }
-
-            val char = spannable[i]
-
-            // Wrap new paragraph lines
-            if (char != '\n') {
-                builder.append("<p>")
-            }
 
             if (bold != null || italic != null) {
                 builder.append("<")
@@ -121,31 +144,27 @@ object HtmlSpannableConverter {
                     '<' -> "&lt;"
                     '>' -> "&gt;"
                     '&' -> "&amp;"
-                    '\n' -> "<br>"
                     else -> char
                 }
             )
 
-            // Close font-size tags
+            // Close tags at span end boundaries
             val nextPos = i + 1
             spans.filterIsInstance<RelativeSizeSpan>()
                 .filter { spannable.getSpanStart(it) == i && spannable.getSpanEnd(it) == nextPos }
                 .forEach { builder.append("</font>") }
-            // Close bg/fg tags
             spans.filterIsInstance<BackgroundColorSpan>()
                 .filter { spannable.getSpanStart(it) == i && spannable.getSpanEnd(it) == nextPos }
                 .forEach { builder.append("</font>") }
             spans.filterIsInstance<ForegroundColorSpan>()
                 .filter { spannable.getSpanStart(it) == i && spannable.getSpanEnd(it) == nextPos }
                 .forEach { builder.append("</font>") }
-            // Close s/u tags
             spans.filterIsInstance<StrikethroughSpan>()
                 .filter { spannable.getSpanStart(it) == i && spannable.getSpanEnd(it) == nextPos }
                 .forEach { builder.append("</s>") }
             spans.filterIsInstance<UnderlineSpan>()
                 .filter { spannable.getSpanStart(it) == i && spannable.getSpanEnd(it) == nextPos }
                 .forEach { builder.append("</u>") }
-            // Close b/i tags
             val closeBold = bold != null && spans.filterIsInstance<StyleSpan>()
                 .filter { it.style == Typeface.BOLD }
                 .any { spannable.getSpanStart(it) == i && spannable.getSpanEnd(it) == nextPos }
@@ -158,13 +177,21 @@ object HtmlSpannableConverter {
                 if (closeItalic) builder.append("i")
                 builder.append(">")
             }
-            if (char != '\n') {
-                builder.append("</p>")
+
+            // Check if paragraph should close after this character (next is newline or span ends here)
+            val nextIsNewline = nextPos < len && spannable[nextPos] == '\n'
+            val paragraphShouldClose = nextIsNewline || spans.any { span ->
+                spannable.getSpanStart(span) <= i && spannable.getSpanEnd(span) == nextPos
+            }
+            if (paragraphShouldClose) {
+                closeParagraph()
             }
 
             i++
         }
 
+        // Close any open paragraph at end
+        closeParagraph()
         return builder.toString()
     }
 

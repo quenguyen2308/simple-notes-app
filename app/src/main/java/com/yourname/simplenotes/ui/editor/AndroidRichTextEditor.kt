@@ -74,6 +74,7 @@ fun AndroidRichTextEditor(
                 textSize = textStyle.fontSize.value
                 typeface = Typeface.DEFAULT
 
+                gravity = android.view.Gravity.TOP or android.view.Gravity.START
                 isFocusable = true
                 isFocusableInTouchMode = true
                 showSoftInputOnFocus = true
@@ -117,6 +118,7 @@ fun AndroidRichTextEditor(
             if (editText.textSize != textStyle.fontSize.value) {
                 editText.textSize = textStyle.fontSize.value
             }
+            editText.gravity = android.view.Gravity.TOP or android.view.Gravity.START
         },
         modifier = modifier.fillMaxSize()
     )

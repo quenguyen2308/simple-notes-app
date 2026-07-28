@@ -1,5 +1,6 @@
 package com.yourname.simplenotes.ui.editor
 
+import android.text.Spannable
 import android.widget.EditText
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -16,6 +17,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import com.yourname.simplenotes.util.HtmlSpannableConverter
 
 /**
  * Row of rich-text format buttons (bold/italic/underline/strike/font size/text color/background color).
@@ -26,22 +28,32 @@ import androidx.compose.ui.unit.dp
  * a separate state source of truth.
  *
  * @param editText        reference to the EditText inside AndroidRichTextEditor
+ * @param onHtmlChange    called with the updated HTML after every format toggle, since setting
+ *                        a span (unlike typing) does NOT fire EditText's TextWatcher — without
+ *                        this, formatting applied via the toolbar would appear live in the
+ *                        editor but never reach the ViewModel, so it silently vanished on save.
  * @param modifier        standard Compose modifier
  */
 @Composable
 fun RichTextFormattingRow(
     editText: EditText?,
+    onHtmlChange: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    fun syncHtml() {
+        val text = editText?.text as? Spannable ?: return
+        onHtmlChange(HtmlSpannableConverter.spannableToHtml(text))
+    }
+
     RichTextFormattingRowCore(
         getState = { editText?.let { getFormatState(it) } ?: FormatState() },
-        onBold = { editText?.let { toggleBold(it) } },
-        onItalic = { editText?.let { toggleItalic(it) } },
-        onUnderline = { editText?.let { toggleUnderline(it) } },
-        onStrikethrough = { editText?.let { toggleStrikethrough(it) } },
-        onTextColor = { color -> editText?.let { setTextColor(it, color) } },
-        onBgColor = { color -> editText?.let { setBackgroundColor(it, color) } },
-        onFontSize = { size -> editText?.let { setFontSize(it, size) } },
+        onBold = { editText?.let { toggleBold(it); syncHtml() } },
+        onItalic = { editText?.let { toggleItalic(it); syncHtml() } },
+        onUnderline = { editText?.let { toggleUnderline(it); syncHtml() } },
+        onStrikethrough = { editText?.let { toggleStrikethrough(it); syncHtml() } },
+        onTextColor = { color -> editText?.let { setTextColor(it, color); syncHtml() } },
+        onBgColor = { color -> editText?.let { setBackgroundColor(it, color); syncHtml() } },
+        onFontSize = { size -> editText?.let { setFontSize(it, size); syncHtml() } },
         modifier = modifier
     )
 }

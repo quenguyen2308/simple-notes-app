@@ -1,7 +1,9 @@
 package com.yourname.simplenotes.ui.editor
 
+import android.content.Context
 import android.content.Intent
 import android.provider.Settings
+import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import androidx.core.text.HtmlCompat
 import androidx.activity.OnBackPressedCallback
@@ -100,6 +102,15 @@ fun NoteEditorScreen(
     /** Reference to the EditText inside AndroidRichTextEditor, used by the toolbar. */
     var editTextRef            by remember { mutableStateOf<EditText?>(null) }
 
+    // The EditText is a native View hosted via AndroidView, not a Compose text field, so
+    // removing it from composition on back-navigation does NOT auto-dismiss its IME session —
+    // the keyboard stays visible over the note list until manually dismissed here.
+    fun hideKeyboard() {
+        val et = editTextRef ?: return
+        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+        imm?.hideSoftInputFromWindow(et.windowToken, 0)
+    }
+
     val topBarLabel = remember(viewModel.createdAtMs) {
         val ms = if (viewModel.createdAtMs > 0L) viewModel.createdAtMs else System.currentTimeMillis()
         val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(ms))
@@ -116,7 +127,7 @@ fun NoteEditorScreen(
     val backDispatcher = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
     DisposableEffect(backDispatcher) {
         val cb = object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() { viewModel.save(); onBack() }
+            override fun handleOnBackPressed() { hideKeyboard(); viewModel.save(); onBack() }
         }
         backDispatcher?.addCallback(cb)
         onDispose { cb.remove() }
@@ -139,7 +150,7 @@ fun NoteEditorScreen(
         topBar = {
             TopAppBar(
                 navigationIcon = {
-                    IconButton(onClick = { viewModel.save(); onBack() }) {
+                    IconButton(onClick = { hideKeyboard(); viewModel.save(); onBack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Quay lại", tint = onEditorBgMuted)
                     }
                 },
@@ -272,7 +283,10 @@ fun NoteEditorScreen(
                                 .width(1.dp)
                                 .background(MaterialTheme.colorScheme.outlineVariant)
                         )
-                        RichTextFormattingRow(editText = editTextRef)
+                        RichTextFormattingRow(
+                            editText = editTextRef,
+                            onHtmlChange = viewModel::onHtmlContentChange
+                        )
                     }
                 }
             }

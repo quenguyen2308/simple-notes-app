@@ -101,11 +101,16 @@ fun AndroidRichTextEditor(
             if (html != lastHtml) {
                 isInternalChange = true
                 val spannable = HtmlSpannableConverter.htmlToSpannable(html)
-                val cursorPos = editText.selectionStart.coerceIn(0, spannable.length)
+                // Preserve the full selection range (not just a collapsed cursor) across this
+                // reparse — the toolbar's format buttons trigger this same path (see
+                // RichTextFormattingRow.syncHtml), so collapsing to a point here would deselect
+                // the user's text after every single toggle, forcing them to reselect before
+                // applying a second style (e.g. bold then italic on the same word).
+                val selStart = minOf(editText.selectionStart, editText.selectionEnd).coerceIn(0, spannable.length)
+                val selEnd = maxOf(editText.selectionStart, editText.selectionEnd).coerceIn(0, spannable.length)
                 editText.setText(spannable)
-                // Restore cursor position
                 if (spannable.isNotEmpty()) {
-                    Selection.setSelection(editText.text, cursorPos.coerceIn(0, editText.text.length))
+                    Selection.setSelection(editText.text, selStart, selEnd)
                 }
                 lastHtml = html
                 isInternalChange = false

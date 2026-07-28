@@ -3,6 +3,7 @@ package com.yourname.simplenotes.domain.model
 import com.yourname.simplenotes.data.local.entities.ContentBlock
 import com.yourname.simplenotes.data.local.entities.toContentBlocks
 import com.yourname.simplenotes.data.local.entities.toJson
+import com.yourname.simplenotes.util.toEditorHtml
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -48,11 +49,11 @@ fun Note.Companion.fromJson(json: String): Note {
         runCatching { obj.getString("contentBlocksJson").toContentBlocks() }
             .getOrElse {
                 val plain = obj.optString("content", "")
-                listOf(ContentBlock.Text(text = plain, htmlContent = plain))
+                listOf(ContentBlock.Text(text = plain, htmlContent = plain.toEditorHtml()))
             }
     } else {
         val plain = obj.optString("content", "")
-        listOf(ContentBlock.Text(text = plain, htmlContent = plain))
+        listOf(ContentBlock.Text(text = plain, htmlContent = plain.toEditorHtml()))
     }
 
     val labelsArray = obj.optJSONArray("labels")

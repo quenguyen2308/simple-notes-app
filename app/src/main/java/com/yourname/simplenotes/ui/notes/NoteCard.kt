@@ -52,6 +52,7 @@ import coil.compose.AsyncImage
 import com.yourname.simplenotes.data.local.entities.ContentBlock
 import com.yourname.simplenotes.domain.model.Note
 import com.yourname.simplenotes.ui.theme.HeaderStyle
+import com.yourname.simplenotes.util.HtmlSpannableConverter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -110,6 +111,13 @@ fun NoteCard(
     }
     val thumbnailUri = remember(note.contentBlocks) {
         note.contentBlocks.filterIsInstance<ContentBlock.Image>().firstOrNull()?.uri
+    }
+    // Rendered with the same bold/italic/underline/strikethrough/color spans as the editor,
+    // instead of note.content's plain-text-only extract, so formatting is visible in the preview.
+    val previewText = remember(note.contentBlocks) {
+        val html = note.contentBlocks.filterIsInstance<ContentBlock.Text>()
+            .joinToString("<br>") { it.htmlContent }
+        HtmlSpannableConverter.htmlToAnnotatedString(html)
     }
 
     Box(
@@ -222,7 +230,7 @@ fun NoteCard(
                         }
                     } else if (note.content.isNotBlank()) {
                         Text(
-                            text       = note.content,
+                            text       = previewText,
                             fontSize   = 13.sp,
                             maxLines   = 6,
                             overflow   = TextOverflow.Ellipsis,

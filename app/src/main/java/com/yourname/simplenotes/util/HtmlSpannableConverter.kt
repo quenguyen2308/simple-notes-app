@@ -11,6 +11,14 @@ import android.text.style.RelativeSizeSpan
 import android.text.style.StrikethroughSpan
 import android.text.style.StyleSpan
 import android.text.style.UnderlineSpan
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.sp
 import org.xml.sax.XMLReader
 import java.util.regex.Pattern
 
@@ -25,6 +33,7 @@ object HtmlSpannableConverter {
 
     private const val TAG_BOLD = "b"
     private const val TAG_ITALIC = "i"
+    private const val TAG_BOLD_ITALIC = "bi"
     private const val TAG_UNDERLINE = "u"
     private const val TAG_STRIKETHROUGH = "s"
     private const val TAG_FONT = "font"
@@ -41,15 +50,33 @@ object HtmlSpannableConverter {
         if (html.isBlank()) return SpannableStringBuilder()
 
         return try {
-            // spannableToHtml() only ever emits <br> for line breaks (no <p> wrapping) — but
-            // strip any <p>/</p> anyway so notes saved by an older buggy version (which wrapped
-            // every line in <p> *in addition to* the <br> between them) self-heal instead of
-            // rendering extra blank lines forever: Html.fromHtml adds its own spacing around
-            // block-level <p> tags on top of the already-present <br>, compounding every time
-            // such a note is reopened.
-            val cleaned = html.replace(Regex("</?p>", RegexOption.IGNORE_CASE), "")
+            // spannableToHtml() only ever emits <br> for line breaks (no <p> wrapping), but two
+            // older formats exist in real saved notes: (a) a buggy version that double-marked
+            // every line break with *both* <p> and an adjacent <br>, and (b) the original rich
+            // editor library, which wrapped each line in its own <p>...</p> with NO <br> at all
+            // between them. So: collapse a <br> sitting directly against a <p> boundary (case a,
+            // to avoid a doubled blank line), then treat every remaining </p> as one line break
+            // in its own right (case b) — rather than stripping <p>/</p> to nothing, which used
+            // to merge every paragraph in a (b)-style note into a single run with no separator.
+            // Must be a Unicode Private Use Area char, not a C0 control char: Html.fromHtml()
+            // silently drops C0 control chars from its output entirely (verified experimentally),
+            // which would erase the very line breaks this placeholder exists to protect.
+            val brPlaceholder = ""
+            val cleaned = html
+                .replace(Regex("(</p>)\\s*<br\\s*/?>", RegexOption.IGNORE_CASE), "$1")
+                .replace(Regex("<br\\s*/?>\\s*(<p[^>]*>)", RegexOption.IGNORE_CASE), "$1")
+                .replace(Regex("</p>", RegexOption.IGNORE_CASE), brPlaceholder)
+                .replace(Regex("<p[^>]*>", RegexOption.IGNORE_CASE), "")
             val spanned = Html.fromHtml(cleaned, Html.FROM_HTML_MODE_LEGACY, null, TagHandler())
             val spannable = SpannableStringBuilder(spanned)
+
+            // Swap the placeholder back to a real newline now that spans are attached — a
+            // 1-for-1 char substitution via Editable.replace keeps every span's offsets valid.
+            var idx = spannable.indexOf(brPlaceholder)
+            while (idx >= 0) {
+                spannable.replace(idx, idx + 1, "\n")
+                idx = spannable.indexOf(brPlaceholder, idx + 1)
+            }
 
             // Post-process <font size="N"> → RelativeSizeSpan
             processFontSizeTags(spannable, cleaned)
@@ -70,24 +97,43 @@ object HtmlSpannableConverter {
      * Strips HTML tags from the editor's HTML output and converts <br> to single newlines.
      * Used for the Note.content plain-text field shown in the note list/preview.
      *
-     * Note: does NOT use Html.fromHtml() — that API adds extra newlines around <p> tags
-     * which would cause double-line-break artifacts in the note list preview.
+     * Note: does NOT rely on Html.fromHtml() for tag/newline handling — that API adds extra
+     * newlines around <p> tags which would cause double-line-break artifacts in the note list
+     * preview. It IS used as a last step purely to decode HTML entities (named like &amp;,
+     * &comma;, &dstrok; and numeric like &#432;, &#7901;) once no tags remain, since notes
+     * saved by older editor versions can contain arbitrary entity-escaped text, not just the
+     * handful of entities HTML itself requires.
      *
-     * <p>/</p> are stripped to nothing (not converted to a newline): spannableToHtml() only
-     * ever emits <br> for line breaks now, but notes saved by an older version — which wrapped
-     * every line in <p> *in addition to* the <br> between them — would otherwise still show a
-     * spurious blank line here until the note is reopened and resaved.
+     * Two older formats are handled specially, both seen in real saved notes: (a) a buggy
+     * version that double-marked every line break with *both* <p> and an adjacent <br>, and
+     * (b) the original rich editor library, which wrapped each line in its own <p>...</p> with
+     * NO <br> at all between them. A <br> sitting directly against a <p> boundary is collapsed
+     * away first (case a, so it isn't counted twice), then every remaining </p> is treated as
+     * one line break in its own right (case b) — stripping <p>/</p> to nothing here would merge
+     * every paragraph of a (b)-style note into one run with no separator at all.
      */
     fun htmlToPlainText(html: String): String {
         if (html.isBlank()) return ""
-        return html
-            .replace("<br>", "\n", ignoreCase = true)
-            .replace(Regex("</?p>", RegexOption.IGNORE_CASE), "")
+        // Must be a Unicode Private Use Area char, not a C0 control char: Html.fromHtml()
+        // silently drops C0 control chars from its output entirely (verified experimentally),
+        // which would erase the very line breaks this placeholder exists to protect.
+        val brPlaceholder = ""
+        val stripped = html
+            .replace(Regex("(</p>)\\s*<br\\s*/?>", RegexOption.IGNORE_CASE), "$1")
+            .replace(Regex("<br\\s*/?>\\s*(<p[^>]*>)", RegexOption.IGNORE_CASE), "$1")
+            .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), brPlaceholder)
+            .replace(Regex("</p>", RegexOption.IGNORE_CASE), brPlaceholder)
+            .replace(Regex("<p[^>]*>", RegexOption.IGNORE_CASE), "")
             .replace(Regex("<[^>]+>"), "")
-            .replace("&lt;", "<")
-            .replace("&gt;", ">")
-            .replace("&amp;", "&")
-            .replace("&nbsp;", " ")
+            // Some fallback paths (e.g. Drive JSON deserialized without a contentBlocksJson,
+            // see NoteJsonExtensions.fromJson) store raw plain text — real newlines, not <br> —
+            // as htmlContent. Html.fromHtml() below collapses literal whitespace like any other
+            // HTML renderer would, so protect those the same way as <br> or they'd flatten to spaces.
+            .replace(Regex("\r?\n"), brPlaceholder)
+        return Html.fromHtml(stripped, Html.FROM_HTML_MODE_LEGACY)
+            .toString()
+            .replace(' ', ' ') // &nbsp; decodes to a non-breaking space; normalize to a plain one
+            .replace(brPlaceholder, "\n")
             .replace(Regex("\n{3,}"), "\n\n")
             .trim()
     }
@@ -128,29 +174,41 @@ object HtmlSpannableConverter {
             val sizeUp = spans.filterIsInstance<RelativeSizeSpan>().filter { it.sizeChange > 1f }.minByOrNull { it.sizeChange }
             val sizeDown = spans.filterIsInstance<RelativeSizeSpan>().filter { it.sizeChange < 1f }.maxByOrNull { it.sizeChange }
 
-            if (bold != null || italic != null) {
+            // A span must only open a tag at its own start offset and close it at its own end
+            // offset — checking mere presence at position i (as an earlier version of this code
+            // did) reopens the tag at every character it covers and never closes a span longer
+            // than one character, since start==i is only true once but was also required for the
+            // close check to fire. That left every multi-character bold/italic/etc. selection
+            // serialized as unclosed tags trailing to the end of the document.
+            val nextPos = i + 1
+            fun startsHere(span: Any?) = span != null && spannable.getSpanStart(span) == i
+            fun endsHere(span: Any?) = span != null && spannable.getSpanEnd(span) == nextPos
+
+            val openBold = startsHere(bold)
+            val openItalic = startsHere(italic)
+            if (openBold || openItalic) {
                 builder.append("<")
-                if (bold != null) builder.append("b")
-                if (italic != null) builder.append("i")
+                if (openBold) builder.append("b")
+                if (openItalic) builder.append("i")
                 builder.append(">")
             }
-            if (underline != null) builder.append("<u>")
-            if (strike != null) builder.append("<s>")
-            if (fg != null) {
+            if (startsHere(underline)) builder.append("<u>")
+            if (startsHere(strike)) builder.append("<s>")
+            if (fg != null && startsHere(fg)) {
                 builder.append("<font color=\"#")
                 builder.append(fg.foregroundColor.toString(16).padStart(8, '0').takeLast(6))
                 builder.append("\">")
             }
-            if (bg != null) {
+            if (bg != null && startsHere(bg)) {
                 builder.append("<font bgcolor=\"#")
                 builder.append(bg.backgroundColor.toString(16).padStart(8, '0').takeLast(6))
                 builder.append("\">")
             }
-            if (sizeUp != null) {
+            if (sizeUp != null && startsHere(sizeUp)) {
                 val px = (sizeUp.sizeChange * 14).toInt()
                 builder.append("<font size=\"$px\">")
             }
-            if (sizeDown != null) {
+            if (sizeDown != null && startsHere(sizeDown)) {
                 val px = (sizeDown.sizeChange * 14).toInt()
                 builder.append("<font size=\"$px\">")
             }
@@ -164,29 +222,15 @@ object HtmlSpannableConverter {
                 }
             )
 
-            // Close tags at span end boundaries
-            val nextPos = i + 1
-            spans.filterIsInstance<RelativeSizeSpan>()
-                .filter { spannable.getSpanStart(it) == i && spannable.getSpanEnd(it) == nextPos }
-                .forEach { builder.append("</font>") }
-            spans.filterIsInstance<BackgroundColorSpan>()
-                .filter { spannable.getSpanStart(it) == i && spannable.getSpanEnd(it) == nextPos }
-                .forEach { builder.append("</font>") }
-            spans.filterIsInstance<ForegroundColorSpan>()
-                .filter { spannable.getSpanStart(it) == i && spannable.getSpanEnd(it) == nextPos }
-                .forEach { builder.append("</font>") }
-            spans.filterIsInstance<StrikethroughSpan>()
-                .filter { spannable.getSpanStart(it) == i && spannable.getSpanEnd(it) == nextPos }
-                .forEach { builder.append("</s>") }
-            spans.filterIsInstance<UnderlineSpan>()
-                .filter { spannable.getSpanStart(it) == i && spannable.getSpanEnd(it) == nextPos }
-                .forEach { builder.append("</u>") }
-            val closeBold = bold != null && spans.filterIsInstance<StyleSpan>()
-                .filter { it.style == Typeface.BOLD }
-                .any { spannable.getSpanStart(it) == i && spannable.getSpanEnd(it) == nextPos }
-            val closeItalic = italic != null && spans.filterIsInstance<StyleSpan>()
-                .filter { it.style == Typeface.ITALIC }
-                .any { spannable.getSpanStart(it) == i && spannable.getSpanEnd(it) == nextPos }
+            // Close tags at span end boundaries, in reverse of the order they were opened above
+            if (sizeUp != null && endsHere(sizeUp)) builder.append("</font>")
+            if (sizeDown != null && endsHere(sizeDown)) builder.append("</font>")
+            if (bg != null && endsHere(bg)) builder.append("</font>")
+            if (fg != null && endsHere(fg)) builder.append("</font>")
+            if (endsHere(strike)) builder.append("</s>")
+            if (endsHere(underline)) builder.append("</u>")
+            val closeBold = endsHere(bold)
+            val closeItalic = endsHere(italic)
             if (closeBold || closeItalic) {
                 builder.append("</")
                 if (closeBold) builder.append("b")
@@ -203,6 +247,13 @@ object HtmlSpannableConverter {
     // ── Tag handler for Html.fromHtml ─────────────────────────────────────────
 
     private class TagHandler : Html.TagHandler {
+        // Tracks the output offset where <bi> opened, so its close can span exactly the text
+        // in between. Unlike "b"/"i"/"u"/"s"/"font" — which Android's HtmlToSpannedConverter
+        // recognizes and spans internally via its own correctly-tracked start/end, never even
+        // reaching this custom handler — "bi" is unrecognized by Android and is the one tag this
+        // class is actually responsible for getting right end-to-end.
+        private val boldItalicStarts = ArrayDeque<Int>()
+
         override fun handleTag(opening: Boolean, tag: String, output: Editable, xmlReader: XMLReader) {
             when (tag.lowercase()) {
                 TAG_BOLD -> {
@@ -212,6 +263,22 @@ object HtmlSpannableConverter {
                 TAG_ITALIC -> {
                     if (opening) setSpan(output, StyleSpan(Typeface.ITALIC))
                     else removeLastSpanOfType(output, StyleSpan::class.java)
+                }
+                TAG_BOLD_ITALIC -> {
+                    // spannableToHtml() emits this combined tag (rather than nested <b><i>) for
+                    // a character that's both bold and italic — Html.fromHtml() only recognizes
+                    // plain "b"/"i", so without this case the tag is silently unrecognized and
+                    // the formatting is dropped the next time the note is loaded.
+                    if (opening) {
+                        boldItalicStarts.addLast(output.length)
+                    } else {
+                        val start = boldItalicStarts.removeLastOrNull() ?: return
+                        val end = output.length
+                        if (start < end) {
+                            output.setSpan(StyleSpan(Typeface.BOLD), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                            output.setSpan(StyleSpan(Typeface.ITALIC), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        }
+                    }
                 }
                 TAG_UNDERLINE -> {
                     if (opening) setSpan(output, UnderlineSpan())
@@ -327,4 +394,37 @@ object HtmlSpannableConverter {
      */
     fun plainTextToHtml(text: String): String =
         text.split("\n").joinToString("<br>") { android.text.Html.escapeHtml(it) }
+
+    /**
+     * Converts editor HTML into a Compose [AnnotatedString] carrying the same bold/italic/
+     * underline/strikethrough/color/size spans as the editor. Reuses [htmlToSpannable] rather
+     * than re-parsing HTML directly, so note previews (list rows, grid cards) render the exact
+     * same formatting as the editor instead of falling back to plain text.
+     */
+    fun htmlToAnnotatedString(html: String): AnnotatedString {
+        val spannable = htmlToSpannable(html)
+        return buildAnnotatedString {
+            append(spannable.toString())
+            spannable.getSpans(0, spannable.length, Any::class.java).forEach { span ->
+                val start = spannable.getSpanStart(span)
+                val end = spannable.getSpanEnd(span)
+                if (start < 0 || end < 0 || start >= end) return@forEach
+                val style = when (span) {
+                    is StyleSpan -> when (span.style) {
+                        Typeface.BOLD -> SpanStyle(fontWeight = FontWeight.Bold)
+                        Typeface.ITALIC -> SpanStyle(fontStyle = FontStyle.Italic)
+                        Typeface.BOLD_ITALIC -> SpanStyle(fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)
+                        else -> null
+                    }
+                    is UnderlineSpan -> SpanStyle(textDecoration = TextDecoration.Underline)
+                    is StrikethroughSpan -> SpanStyle(textDecoration = TextDecoration.LineThrough)
+                    is ForegroundColorSpan -> SpanStyle(color = Color(span.foregroundColor))
+                    is BackgroundColorSpan -> SpanStyle(background = Color(span.backgroundColor))
+                    is RelativeSizeSpan -> SpanStyle(fontSize = (14f * span.sizeChange).sp)
+                    else -> null
+                }
+                if (style != null) addStyle(style, start, end)
+            }
+        }
+    }
 }

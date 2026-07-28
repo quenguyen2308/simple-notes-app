@@ -250,15 +250,20 @@ class NoteEditorViewModel(
             } else title
 
             val original = originalNote
-            // Compare by *meaning*, not by the raw HTML string: the rich editor's setHtml()/
-            // toHtml() round trip commonly reformats HTML (different <p>/<br> structure, etc.)
-            // even when the user didn't touch anything, so comparing contentBlocks (which
-            // embeds htmlContent) directly would flag a no-op view as an edit — which used to
-            // bump contentUpdatedAt (the user-facing "date modified") just from opening a note.
+            // Plain text alone doesn't capture the edit: toggling bold/italic/color/font-size
+            // on a selection changes htmlContent without changing a single character of plain
+            // text, so it must also be compared here — otherwise the write below gets skipped
+            // by nothingChanged and formatting silently fails to persist. htmlContent is safe to
+            // compare directly (unlike the old Compose rich-text library that predated the
+            // EditText-based editor) because AndroidRichTextEditor never feeds its load-time
+            // html→Spannable round trip back into htmlContent — only an actual user edit does.
             val originalWasChecklist = existingContentBlocks.any { it is ContentBlock.Checklist }
             val originalPlainText = existingContentBlocks
                 .filterIsInstance<ContentBlock.Text>()
                 .joinToString("\n") { it.text }
+            val originalHtml = existingContentBlocks
+                .filterIsInstance<ContentBlock.Text>()
+                .firstOrNull()?.htmlContent ?: ""
             val originalChecklistItems = existingContentBlocks
                 .filterIsInstance<ContentBlock.Checklist>()
                 .firstOrNull()?.items.orEmpty()
@@ -271,7 +276,8 @@ class NoteEditorViewModel(
             val contentChanged = isNewNote ||
                 effectiveTitle != original?.title ||
                 isChecklistMode != originalWasChecklist ||
-                (if (isChecklistMode) checklistItems != originalChecklistItems else plainText != originalPlainText) ||
+                (if (isChecklistMode) checklistItems != originalChecklistItems
+                 else plainText != originalPlainText || html != originalHtml) ||
                 imageBlocks != originalImages
             val newContentUpdatedAt = if (contentChanged) now else original?.contentUpdatedAt ?: now
 

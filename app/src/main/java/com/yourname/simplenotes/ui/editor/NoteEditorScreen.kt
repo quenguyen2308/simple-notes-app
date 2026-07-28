@@ -21,6 +21,7 @@ import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -85,12 +86,17 @@ fun NoteEditorScreen(
     onBack: () -> Unit,
     initialCategoryId: String? = null,
     sharedText: String? = null,
+    /** "checklist" or "image" — pre-opens the note in that mode/picker once, for the Home
+     *  screen's quick-action pills. Consumed exactly once via [initialModeHandled] below so
+     *  rotation/recomposition doesn't refire it. */
+    initialMode: String? = null,
     viewModel: NoteEditorViewModel = koinViewModel()
 ) {
     LaunchedEffect(noteId) { viewModel.load(noteId, initialCategoryId, sharedText) }
 
     val context = LocalContext.current
     val categories by viewModel.categories.collectAsStateWithLifecycle()
+    var initialModeHandled by rememberSaveable { mutableStateOf(false) }
 
     var showOverflowMenu      by remember { mutableStateOf(false) }
     var showColorDialog       by remember { mutableStateOf(false) }
@@ -124,6 +130,15 @@ fun NoteEditorScreen(
 
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let { viewModel.addImage(it.toString()) }
+    }
+
+    LaunchedEffect(initialMode, noteId) {
+        if (initialModeHandled) return@LaunchedEffect
+        initialModeHandled = true
+        when (initialMode) {
+            "checklist" -> viewModel.toggleChecklistMode()
+            "image"     -> galleryLauncher.launch("image/*")
+        }
     }
 
     // Pastel note colors are fixed light hues regardless of app theme, so a custom-colored

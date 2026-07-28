@@ -27,7 +27,9 @@ import com.yourname.simplenotes.domain.model.Note
 import com.yourname.simplenotes.domain.model.NoteMetadata
 import com.yourname.simplenotes.sync.SyncScheduler
 import com.yourname.simplenotes.ui.editor.NoteColorPicker
+import com.yourname.simplenotes.ui.theme.AppTheme
 import com.yourname.simplenotes.ui.theme.HeaderStyle
+import com.yourname.simplenotes.ui.theme.appBackground
 import com.yourname.simplenotes.ui.theme.isDynamicColorAvailable
 import com.yourname.simplenotes.util.toEditorHtml
 import java.util.UUID
@@ -38,6 +40,7 @@ private const val SUPPORT_EMAIL = "quenguyen2308@gmail.com"
 fun SettingsScreen(
     onThemeChange: (String) -> Unit = {},
     onDynamicColorChange: (Boolean) -> Unit = {},
+    onAppThemeChange: (String) -> Unit = {},
     onImportNotes: (List<Note>) -> Unit = {},
     onImportArchive: (Uri) -> Unit = {}
 ) {
@@ -70,6 +73,7 @@ fun SettingsScreen(
     var showLinksEnabled by remember { mutableStateOf(prefs.showLinksEnabled) }
     var hideScrollbarEnabled by remember { mutableStateOf(prefs.hideScrollbarEnabled) }
     var headerStyle by remember { mutableStateOf(HeaderStyle.fromStorageKey(prefs.headerStyle)) }
+    var appTheme by remember { mutableStateOf(AppTheme.fromStorageKey(prefs.appTheme)) }
     val archiveImportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -80,11 +84,12 @@ fun SettingsScreen(
     var showLockMethodDialog by remember { mutableStateOf(false) }
     var showPageStyleDialog by remember { mutableStateOf(false) }
     var showHeaderStyleDialog by remember { mutableStateOf(false) }
+    var showAppThemeDialog by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .appBackground()
             .verticalScroll(rememberScrollState())
     ) {
         // ── Header ────────────────────────────────────────────────────
@@ -115,6 +120,12 @@ fun SettingsScreen(
                     else    -> "Theo hệ thống"
                 },
                 onClick = { showThemeDialog = true }
+            )
+            RowDivider()
+            PlainRow(
+                title = "Bộ chủ đề màu",
+                subtitle = appTheme.label,
+                onClick = { showAppThemeDialog = true }
             )
             RowDivider()
             PlainRow(
@@ -431,6 +442,50 @@ fun SettingsScreen(
             },
             confirmButton = {
                 TextButton(onClick = { showPageStyleDialog = false }) { Text("Đóng") }
+            }
+        )
+    }
+
+    // ── App color theme dialog ───────────────────────────────────────────
+    if (showAppThemeDialog) {
+        AlertDialog(
+            onDismissRequest = { showAppThemeDialog = false },
+            title = { Text("Bộ chủ đề màu") },
+            text = {
+                Column {
+                    AppTheme.entries.forEach { theme ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    appTheme = theme
+                                    prefs.appTheme = theme.storageKey
+                                    onAppThemeChange(theme.storageKey)
+                                    syncSettingsNow()
+                                    showAppThemeDialog = false
+                                }
+                                .padding(vertical = 12.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = appTheme == theme,
+                                onClick = {
+                                    appTheme = theme
+                                    prefs.appTheme = theme.storageKey
+                                    onAppThemeChange(theme.storageKey)
+                                    syncSettingsNow()
+                                    showAppThemeDialog = false
+                                },
+                                colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(theme.label, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showAppThemeDialog = false }) { Text("Đóng") }
             }
         )
     }

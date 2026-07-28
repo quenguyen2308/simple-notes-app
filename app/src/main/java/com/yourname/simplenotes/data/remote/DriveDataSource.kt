@@ -324,6 +324,7 @@ class DriveDataSource(private val authManager: DriveAuthManager) {
                 put("showLinksEnabled", snapshot.showLinksEnabled)
                 put("hideScrollbarEnabled", snapshot.hideScrollbarEnabled)
                 put("headerStyle", snapshot.headerStyle)
+                put("appTheme", snapshot.appTheme)
                 put("updatedAt", snapshot.updatedAt)
             }.toString()
 
@@ -358,6 +359,7 @@ class DriveDataSource(private val authManager: DriveAuthManager) {
                 showLinksEnabled = obj.optBoolean("showLinksEnabled", true),
                 hideScrollbarEnabled = obj.optBoolean("hideScrollbarEnabled", false),
                 headerStyle = obj.optString("headerStyle", "default"),
+                appTheme = obj.optString("appTheme", "default"),
                 updatedAt = obj.optLong("updatedAt", 0L)
             )
         }.getOrNull()

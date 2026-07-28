@@ -1,6 +1,5 @@
 package com.yourname.simplenotes.ui.notes
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,6 +17,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yourname.simplenotes.domain.model.Note
+import com.yourname.simplenotes.ui.theme.appBackground
 
 @Composable
 fun RecycleBinScreen(
@@ -33,7 +33,7 @@ fun RecycleBinScreen(
     Column(
         Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .appBackground()
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(4.dp),

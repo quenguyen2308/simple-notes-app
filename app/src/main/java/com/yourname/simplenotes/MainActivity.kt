@@ -21,6 +21,7 @@ import com.yourname.simplenotes.sync.SyncScheduler
 import com.yourname.simplenotes.ui.AppNavigation
 import com.yourname.simplenotes.ui.auth.SignInScreen
 import com.yourname.simplenotes.ui.settings.SettingsPrefs
+import com.yourname.simplenotes.ui.theme.AppTheme
 import com.yourname.simplenotes.ui.theme.SimpleNotesTheme
 import org.koin.android.ext.android.inject
 
@@ -43,6 +44,8 @@ class MainActivity : AppCompatActivity() {
     /** "system" | "light" | "dark" — triggers recompose on change */
     private var themeMode by mutableStateOf("system")
     private var dynamicColorEnabled by mutableStateOf(true)
+    /** "default" | "samsung" | "easy" — triggers recompose on change */
+    private var appTheme by mutableStateOf("default")
     /** Text received via another app's share sheet (Samsung Notes, Easy Note, …), pending consumption. */
     private var pendingSharedText by mutableStateOf<String?>(null)
 
@@ -92,6 +95,7 @@ class MainActivity : AppCompatActivity() {
         val settingsPrefs = SettingsPrefs(this)
         themeMode = settingsPrefs.themeMode
         dynamicColorEnabled = settingsPrefs.dynamicColorEnabled
+        appTheme = settingsPrefs.appTheme
         val requiresAuth = AuthPreferencesManager(this).isBiometricEnabled
         handleIncomingIntent(intent)
 
@@ -102,7 +106,11 @@ class MainActivity : AppCompatActivity() {
                 "light" -> false
                 else    -> systemDark
             }
-            SimpleNotesTheme(darkTheme = darkTheme, dynamicColor = dynamicColorEnabled) {
+            SimpleNotesTheme(
+                darkTheme = darkTheme,
+                dynamicColor = dynamicColorEnabled,
+                appTheme = AppTheme.fromStorageKey(appTheme)
+            ) {
                 if (isSignedIn) {
                     LaunchedEffect(Unit) { syncScheduler.schedulePeriodicSync() }
                     AppNavigation(
@@ -110,6 +118,7 @@ class MainActivity : AppCompatActivity() {
                         requiresAuth = requiresAuth,
                         onThemeChange = { themeMode = it },
                         onDynamicColorChange = { dynamicColorEnabled = it },
+                        onAppThemeChange = { appTheme = it },
                         sharedText = pendingSharedText,
                         onSharedTextConsumed = { pendingSharedText = null }
                     )

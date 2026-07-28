@@ -63,6 +63,11 @@ class SettingsPrefs(context: Context) {
         get() = prefs.getString(KEY_HEADER_STYLE, "default") ?: "default"
         set(v) = edit { putString(KEY_HEADER_STYLE, v) }
 
+    /** "default" | "samsung" | "easy" — app-wide color identity, see [com.yourname.simplenotes.ui.theme.AppTheme]. */
+    var appTheme: String
+        get() = prefs.getString(KEY_APP_THEME, "default") ?: "default"
+        set(v) = edit { putString(KEY_APP_THEME, v) }
+
     /** epochMs of the last local settings change. Used for last-write-wins Drive sync. */
     val updatedAt: Long
         get() = prefs.getLong(KEY_UPDATED_AT, 0L)
@@ -78,6 +83,7 @@ class SettingsPrefs(context: Context) {
         showLinksEnabled = showLinksEnabled,
         hideScrollbarEnabled = hideScrollbarEnabled,
         headerStyle = headerStyle,
+        appTheme = appTheme,
         updatedAt = updatedAt
     )
 
@@ -98,6 +104,7 @@ class SettingsPrefs(context: Context) {
             .putBoolean(KEY_SHOW_LINKS, snapshot.showLinksEnabled)
             .putBoolean(KEY_HIDE_SCROLLBAR, snapshot.hideScrollbarEnabled)
             .putString(KEY_HEADER_STYLE, snapshot.headerStyle)
+            .putString(KEY_APP_THEME, snapshot.appTheme)
             .putLong(KEY_UPDATED_AT, snapshot.updatedAt)
             .apply()
     }
@@ -113,6 +120,7 @@ class SettingsPrefs(context: Context) {
         private const val KEY_SHOW_LINKS = "show_links_enabled"
         private const val KEY_HIDE_SCROLLBAR = "hide_scrollbar_enabled"
         private const val KEY_HEADER_STYLE = "header_style"
+        private const val KEY_APP_THEME = "app_theme"
         private const val KEY_UPDATED_AT = "settings_updated_at"
     }
 }

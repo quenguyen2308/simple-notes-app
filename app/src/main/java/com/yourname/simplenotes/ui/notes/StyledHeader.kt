@@ -37,10 +37,16 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.yourname.simplenotes.ui.theme.Baloo2Family
 import com.yourname.simplenotes.ui.theme.DeskCoral
 import com.yourname.simplenotes.ui.theme.DeskCoralDark
 import com.yourname.simplenotes.ui.theme.DeskSage
 import com.yourname.simplenotes.ui.theme.HeaderStyle
+import com.yourname.simplenotes.ui.theme.NotezAmber
+import com.yourname.simplenotes.ui.theme.NotezInk
+import com.yourname.simplenotes.ui.theme.NotezPinkLight
+import com.yourname.simplenotes.ui.theme.NotezPurpleDark
+import com.yourname.simplenotes.ui.theme.NotezPurpleLight
 
 /** Renders the note-list title/subtitle block per [style] — the "Bàn Làm Việc" default,
  *  or one of the playful alternates picked in Settings. */
@@ -51,6 +57,7 @@ fun StyledNoteListHeader(style: HeaderStyle, title: String, subtitle: String) {
         HeaderStyle.COMIC   -> ComicHeader(title, subtitle)
         HeaderStyle.CUTE    -> CuteHeader(title, subtitle)
         HeaderStyle.MEADOW  -> MeadowHeader(title, subtitle)
+        HeaderStyle.NOTEZ   -> NotezHeader(title, subtitle)
     }
 }
 
@@ -62,6 +69,7 @@ fun StyledFab(style: HeaderStyle, onClick: () -> Unit) {
         HeaderStyle.COMIC   -> ComicFab(onClick)
         HeaderStyle.CUTE    -> CuteFab(onClick)
         HeaderStyle.MEADOW  -> MeadowFab(onClick)
+        HeaderStyle.NOTEZ   -> NotezFab(onClick)
     }
 }
 
@@ -75,6 +83,7 @@ fun styledIconTint(style: HeaderStyle, default: Color = MaterialTheme.colorSchem
         HeaderStyle.COMIC   -> ComicInk
         HeaderStyle.CUTE    -> CuteInk
         HeaderStyle.MEADOW  -> MeadowInk
+        HeaderStyle.NOTEZ   -> NotezInk
     }
 
 /** A toolbar icon button, tinted per [style]. No background badge — see [styledIconTint]. */
@@ -313,5 +322,41 @@ private fun MeadowFab(onClick: () -> Unit) {
         gradient = Brush.linearGradient(listOf(Color(0xFFFFD23F), Color(0xFFF5A623))),
         shadowColor = Color(0xFFB47814),
         iconTint = Color(0xFF6B4310)
+    )
+}
+
+// ── D. NOTEZ (GenZ) ──────────────────────────────────────────────────────
+
+@Composable
+private fun NotezHeader(title: String, subtitle: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            title,
+            style = TextStyle(
+                fontFamily = Baloo2Family,
+                fontSize = 30.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = NotezInk
+            )
+        )
+        Spacer(Modifier.height(6.dp))
+        Box(
+            Modifier
+                .clip(RoundedCornerShape(50))
+                .background(NotezAmber)
+                .padding(horizontal = 12.dp, vertical = 4.dp)
+        ) {
+            Text(subtitle, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = NotezInk)
+        }
+    }
+}
+
+@Composable
+private fun NotezFab(onClick: () -> Unit) {
+    GlossyCircleFab(
+        onClick = onClick,
+        gradient = Brush.linearGradient(listOf(NotezPurpleLight, NotezPinkLight)),
+        shadowColor = NotezPurpleDark,
+        iconTint = Color.White
     )
 }

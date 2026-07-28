@@ -13,6 +13,8 @@ data class SettingsSnapshot(
     val hideScrollbarEnabled: Boolean,
     /** "default" | "comic" | "cute" | "meadow" — visual style of the note-list header/FAB. */
     val headerStyle: String,
+    /** "default" | "samsung" | "easy" — app-wide color identity (see [com.yourname.simplenotes.ui.theme.AppTheme]). */
+    val appTheme: String,
     /** epochMs of the last local change — last-write-wins against the Drive copy. */
     val updatedAt: Long
 )

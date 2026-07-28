@@ -1,6 +1,5 @@
 package com.yourname.simplenotes.ui.auth
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.yourname.simplenotes.ui.theme.appBackground
 
 /**
  * Full-screen loading overlay shown while biometric authentication is in progress.
@@ -28,7 +28,7 @@ fun AuthLoadingScreen(message: String = "Authenticating...") {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
+            .appBackground(),
         contentAlignment = Alignment.Center
     ) {
         Column(

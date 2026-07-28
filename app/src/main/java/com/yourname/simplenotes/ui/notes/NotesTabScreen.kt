@@ -68,22 +68,12 @@ import com.yourname.simplenotes.ui.settings.SettingsPrefs
 import com.yourname.simplenotes.ui.settings.SettingsScreen
 import com.yourname.simplenotes.ui.theme.FOLDER_COLOR_PALETTE
 import com.yourname.simplenotes.ui.theme.HeaderStyle
+import com.yourname.simplenotes.ui.theme.appBackground
 import com.yourname.simplenotes.util.BiometricHelper
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import org.koin.androidx.compose.koinViewModel
-
-private data class FolderNode(val category: Category, val children: List<FolderNode>)
-
-private fun buildFolderTree(categories: List<Category>): List<FolderNode> {
-    val byParent = categories.groupBy { it.parentId }
-    fun nodes(parentId: String?): List<FolderNode> =
-        (byParent[parentId] ?: emptyList())
-            .sortedBy { it.order }
-            .map { cat -> FolderNode(cat, nodes(cat.id)) }
-    return nodes(null)
-}
 
 enum class SortField(val label: String) {
     DATE_MODIFIED("Date modified"),
@@ -181,24 +171,14 @@ private fun TimelineNoteRow(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NoteListScreen(
+fun NotesTabScreen(
     onNoteClick: (String) -> Unit,
     onNewNote: (String?) -> Unit,
     onSearchClick: () -> Unit = {},
-    onThemeChange: (String) -> Unit = {},
-    onDynamicColorChange: (Boolean) -> Unit = {},
     viewModel: NoteListViewModel = koinViewModel()
 ) {
     val notes by viewModel.notes.collectAsStateWithLifecycle()
-    val categories by viewModel.categories.collectAsStateWithLifecycle()
-    val categoryCounts by viewModel.categoryCounts.collectAsStateWithLifecycle()
-    val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
     val viewType by viewModel.viewType.collectAsStateWithLifecycle()
-    val deletedNotes by viewModel.deletedNotes.collectAsStateWithLifecycle()
-    val totalNoteCount by viewModel.totalNoteCount.collectAsStateWithLifecycle()
-    val allLabels by viewModel.allLabels.collectAsStateWithLifecycle()
-    val selectedLabel by viewModel.selectedLabel.collectAsStateWithLifecycle()
-    val pinnedOnly by viewModel.pinnedOnly.collectAsStateWithLifecycle()
     val archiveImportOutcome by viewModel.archiveImportOutcome.collectAsStateWithLifecycle()
 
     val pullRefreshState = rememberPullToRefreshState()
@@ -216,8 +196,6 @@ fun NoteListScreen(
         }
     }
     val context = LocalContext.current
-    val account = remember { GoogleSignIn.getLastSignedInAccount(context) }
-    val accountPhotoUrl = account?.photoUrl
 
     LaunchedEffect(archiveImportOutcome) {
         val outcome = archiveImportOutcome ?: return@LaunchedEffect
@@ -244,21 +222,18 @@ fun NoteListScreen(
         viewModel.clearArchiveImportOutcome()
     }
 
-    var viewingFolderId by rememberSaveable { mutableStateOf<String?>(null) }
-    var showSettings    by remember { mutableStateOf(false) }
     val settingsPrefs   = remember { SettingsPrefs(context) }
     var headerStyle by remember { mutableStateOf(HeaderStyle.fromStorageKey(settingsPrefs.headerStyle)) }
-    // Settings is shown as an overlay within this same composable (not a nav route), so re-read
-    // the picked style each time it's dismissed — there's no other signal that it may have changed.
-    LaunchedEffect(showSettings) {
-        if (!showSettings) headerStyle = HeaderStyle.fromStorageKey(settingsPrefs.headerStyle)
+    // Settings now lives on its own Cá nhân tab (not an in-place overlay here), so re-read the
+    // picked style whenever this tab resumes rather than on a dismiss callback.
+    LifecycleResumeEffect(viewModel) {
+        headerStyle = HeaderStyle.fromStorageKey(settingsPrefs.headerStyle)
+        onPauseOrDispose { }
     }
-    var showRecycleBin  by remember { mutableStateOf(false) }
     var searchQuery     by remember { mutableStateOf("") }
     var showSearchBar   by remember { mutableStateOf(false) }
     val searchFocusRequester = remember { FocusRequester() }
     var showMoreMenu    by remember { mutableStateOf(false) }
-    var showCreateFolderDialog by remember { mutableStateOf(false) }
     var sortField       by remember { mutableStateOf(SortField.DATE_MODIFIED) }
     var sortAscending   by remember { mutableStateOf(false) }
     var selectedNotes   by remember { mutableStateOf(setOf<String>()) }
@@ -271,28 +246,11 @@ fun NoteListScreen(
     // bottom sheet, or multiple ids from the selection action bar's bulk move button.
     var moveTargetNoteIds by remember { mutableStateOf<List<String>?>(null) }
     var colorPickerNote  by remember { mutableStateOf<Note?>(null) }
-    var folderToDelete   by remember { mutableStateOf<Category?>(null) }
-    var folderToEdit     by remember { mutableStateOf<Category?>(null) }
 
-    val drawerState = rememberDrawerState(DrawerValue.Closed)
-    val scope = rememberCoroutineScope()
-
-    // Back: recycle bin/settings → main, else search collapses before folder → home
-    BackHandler(enabled = showSearchBar || viewingFolderId != null || showSettings || showRecycleBin) {
-        when {
-            showRecycleBin -> showRecycleBin = false
-            showSettings -> showSettings = false
-            showSearchBar -> {
-                showSearchBar = false
-                searchQuery   = ""
-            }
-            viewingFolderId != null -> {
-                viewingFolderId = null
-                isSelectionMode = false
-                selectedNotes   = emptySet()
-                searchQuery     = ""
-            }
-        }
+    // Back: search collapses before leaving the tab
+    BackHandler(enabled = showSearchBar) {
+        showSearchBar = false
+        searchQuery   = ""
     }
 
     // Trigger sync whenever the screen resumes (app comes to foreground)
@@ -301,15 +259,13 @@ fun NoteListScreen(
         onPauseOrDispose { }
     }
 
-    // notes is unfiltered (selectedCategoryId stays null); we filter in UI
-    val totalNotes       = notes.size
-    val currentFolder    = remember(viewingFolderId, categories) { categories.find { it.id == viewingFolderId } }
+    val totalNotes = notes.size
 
-    val currentNotes = remember(notes, viewingFolderId, searchQuery, sortField, sortAscending) {
-        val base = if (viewingFolderId == null) notes.filter { it.folderId == null }
-                   else notes.filter { it.folderId == viewingFolderId }
-        val filtered = if (searchQuery.isEmpty()) base
-                       else base.filter {
+    // All notes regardless of folder — folder browsing lives on the Thư mục tab, so "Ghi chú"
+    // is the flat, unfiled-and-filed-alike view of everything.
+    val currentNotes = remember(notes, searchQuery, sortField, sortAscending) {
+        val filtered = if (searchQuery.isEmpty()) notes
+                       else notes.filter {
                            it.title.contains(searchQuery, ignoreCase = true) ||
                            it.content.contains(searchQuery, ignoreCase = true)
                        }
@@ -344,212 +300,7 @@ fun NoteListScreen(
         )
     }
 
-    ModalNavigationDrawer(
-        drawerState   = drawerState,
-        drawerContent = {
-            ModalDrawerSheet(
-                drawerContainerColor = MaterialTheme.colorScheme.surface,
-                drawerShape          = RoundedCornerShape(topEnd = 16.dp, bottomEnd = 16.dp),
-                modifier             = Modifier.width(300.dp)
-            ) {
-                Column(Modifier.fillMaxSize().padding(16.dp)) {
-                    // ── Header: account avatar + name/email ─────────────
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(vertical = 24.dp)
-                    ) {
-                        if (accountPhotoUrl != null) {
-                            AsyncImage(
-                                model             = accountPhotoUrl,
-                                contentDescription = null,
-                                contentScale      = ContentScale.Crop,
-                                modifier          = Modifier.size(64.dp).clip(CircleShape)
-                            )
-                        } else {
-                            Box(
-                                modifier = Modifier
-                                    .size(64.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primaryContainer),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    (account?.displayName ?: "?").take(1).uppercase(),
-                                    fontSize   = 24.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color      = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            }
-                        }
-                        Spacer(Modifier.width(16.dp))
-                        Column {
-                            Text(
-                                account?.displayName ?: "Người dùng",
-                                fontSize   = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                color      = MaterialTheme.colorScheme.onSurface
-                            )
-                            if (account?.email != null) {
-                                Text(
-                                    account.email!!,
-                                    fontSize = 14.sp,
-                                    color    = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    }
-
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    Spacer(Modifier.height(16.dp))
-
-                    // ── Main section: Ghi chú ────────────────────────────
-                    DrawerSectionLabel("Ghi chú")
-                    DrawerNavItem(
-                        icon     = Icons.AutoMirrored.Filled.Notes,
-                        label    = "Tất cả ghi chú",
-                        count    = totalNoteCount,
-                        selected = viewingFolderId == null && !pinnedOnly && selectedLabel == null,
-                        onClick  = {
-                            viewingFolderId = null
-                            viewModel.setPinnedOnly(false)
-                            viewModel.setLabelFilter(null)
-                            scope.launch { drawerState.close() }
-                        }
-                    )
-                    DrawerNavItem(
-                        icon     = Icons.Default.PushPin,
-                        label    = "Đã ghim",
-                        selected = pinnedOnly,
-                        onClick  = {
-                            viewingFolderId = null
-                            viewModel.setPinnedOnly(true)
-                            viewModel.setLabelFilter(null)
-                            scope.launch { drawerState.close() }
-                        }
-                    )
-
-                    Spacer(Modifier.height(16.dp))
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    Spacer(Modifier.height(16.dp))
-
-                    // ── Tags section: Nhãn ────────────────────────────────
-                    if (allLabels.isNotEmpty()) {
-                        DrawerSectionLabel("Nhãn")
-                        allLabels.forEachIndexed { index, label ->
-                            DrawerTagItem(
-                                color    = DRAWER_TAG_COLORS[index % DRAWER_TAG_COLORS.size],
-                                label    = "#$label",
-                                selected = selectedLabel == label,
-                                onClick  = {
-                                    viewingFolderId = null
-                                    viewModel.setPinnedOnly(false)
-                                    viewModel.setLabelFilter(label)
-                                    scope.launch { drawerState.close() }
-                                }
-                            )
-                        }
-                        Spacer(Modifier.height(16.dp))
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        Spacer(Modifier.height(16.dp))
-                    }
-
-                    // ── Folders section ───────────────────────────────────
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            "THƯ MỤC", fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f)
-                        )
-                        DrawerCount(categories.size)
-                    }
-                    val folderTree = remember(categories) { buildFolderTree(categories) }
-                    folderTree.forEach { node ->
-                        FolderDrawerItem(
-                            node             = node,
-                            depth            = 0,
-                            categoryCounts   = categoryCounts,
-                            selectedFolderId = viewingFolderId,
-                            onFolderClick    = { id ->
-                                viewingFolderId = id
-                                viewModel.setPinnedOnly(false)
-                                viewModel.setLabelFilter(null)
-                                scope.launch { drawerState.close() }
-                            }
-                        )
-                    }
-
-                    Spacer(Modifier.weight(1f))
-
-                    // ── System section ────────────────────────────────────
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    Spacer(Modifier.height(16.dp))
-                    DrawerNavItem(
-                        icon     = Icons.Default.Delete,
-                        label    = "Thùng rác",
-                        count    = deletedNotes.size.takeIf { it > 0 },
-                        selected = showRecycleBin,
-                        onClick  = {
-                            showRecycleBin = true
-                            scope.launch { drawerState.close() }
-                        }
-                    )
-                    DrawerNavItem(
-                        icon     = Icons.Default.Settings,
-                        label    = "Cài đặt",
-                        selected = showSettings,
-                        onClick  = {
-                            showSettings = true
-                            scope.launch { drawerState.close() }
-                        }
-                    )
-                }
-            }
-        }
-    ) {
-        // ── Recycle Bin overlay ──────────────────────────────────────
-        if (showRecycleBin) {
-            RecycleBinScreen(
-                notes          = deletedNotes,
-                onRestore      = { viewModel.restore(it) },
-                onPermanentDelete = { viewModel.permanentDelete(it) },
-                onClearAll     = { viewModel.clearRecycleBin() },
-                onBack         = { showRecycleBin = false }
-            )
-            return@ModalNavigationDrawer
-        }
-
-        // ── Settings overlay ─────────────────────────────────────────
-        if (showSettings) {
-            Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-                Row(
-                    modifier           = Modifier.fillMaxWidth().padding(4.dp),
-                    verticalAlignment  = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = { showSettings = false }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
-                    }
-                    Text(
-                        "Settings",
-                        style    = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.padding(start = 8.dp)
-                    )
-                }
-                SettingsScreen(
-                    onThemeChange = onThemeChange,
-                    onDynamicColorChange = onDynamicColorChange,
-                    onImportNotes = { viewModel.importNotes(it) },
-                    onImportArchive = { viewModel.importArchive(it) }
-                )
-            }
-            return@ModalNavigationDrawer
-        }
-
+    run {
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
             bottomBar = {
@@ -605,7 +356,7 @@ fun NoteListScreen(
                 Modifier
                     .padding(padding)
                     .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.background)
+                    .appBackground()
             ) {
                 // ── Large centered header ────────────────────────────
                 Box(

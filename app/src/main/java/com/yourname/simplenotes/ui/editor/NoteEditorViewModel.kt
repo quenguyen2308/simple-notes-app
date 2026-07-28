@@ -222,7 +222,7 @@ class NoteEditorViewModel(
             val hasContent = if (isChecklistMode)
                 checklistItems.any { it.text.isNotBlank() }
             else
-                Html.fromHtml(htmlContent, Html.FROM_HTML_MODE_COMPACT)
+                HtmlSpannableConverter.htmlToPlainText(htmlContent)
                     .toString().isNotBlank()
             if (title.isBlank() && !hasContent && imageBlocks.isEmpty()) return
         }
@@ -230,7 +230,7 @@ class NoteEditorViewModel(
         viewModelScope.launch {
             val html = htmlContent
             // Rebuild plain text from HTML for search/preview/sync
-            val plainText = Html.fromHtml(html, Html.FROM_HTML_MODE_COMPACT).toString()
+            val plainText = HtmlSpannableConverter.htmlToPlainText(html)
                 .toString().trim()
 
             // Build content blocks based on current mode; imageBlocks is the source of truth

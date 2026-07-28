@@ -62,6 +62,28 @@ object HtmlSpannableConverter {
         }
     }
 
+    /**
+     * Strips HTML tags from the editor's HTML output and converts <br> to single newlines.
+     * Used for the Note.content plain-text field shown in the note list/preview.
+     *
+     * Note: does NOT use Html.fromHtml() — that API adds extra newlines around <p> tags
+     * which would cause double-line-break artifacts in the note list preview.
+     */
+    fun htmlToPlainText(html: String): String {
+        if (html.isBlank()) return ""
+        return html
+            .replace("<br>", "\n", ignoreCase = true)
+            .replace("<p>", "", ignoreCase = true)
+            .replace("</p>", "\n", ignoreCase = true)
+            .replace(Regex("<[^>]+>"), "")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&amp;", "&")
+            .replace("&nbsp;", " ")
+            .replace(Regex("\n{3,}"), "\n\n")
+            .trim()
+    }
+
     /** Converts Spannable (from EditText) back to HTML string for storage. */
     fun spannableToHtml(spannable: Spannable): String {
         if (spannable.isEmpty()) return ""

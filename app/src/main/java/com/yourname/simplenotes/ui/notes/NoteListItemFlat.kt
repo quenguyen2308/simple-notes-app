@@ -20,7 +20,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.yourname.simplenotes.data.local.entities.ContentBlock
 import com.yourname.simplenotes.domain.model.Note
+import com.yourname.simplenotes.util.HtmlSpannableConverter
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -97,15 +99,30 @@ fun NoteListItemFlat(
                     )
                 }
                 Spacer(Modifier.height(2.dp))
-                // Preview or locked label
-                val preview = if (note.isLocked) "[Đã khóa]"
-                              else note.content.replace("\n", " ").trim()
-                if (preview.isNotEmpty()) {
+                // Preview or locked label — real line breaks shown (matches grid card), just
+                // capped to fewer lines since a list row is more compact than a grid card.
+                // Rendered with the same bold/italic/underline/strikethrough/color spans as the
+                // editor, instead of note.content's plain-text-only extract.
+                if (note.isLocked) {
+                    Text(
+                        text = "[Đã khóa]",
+                        fontSize = 13.sp,
+                        color = colorPreview,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(Modifier.height(3.dp))
+                } else if (note.content.isNotBlank()) {
+                    val preview = remember(note.contentBlocks) {
+                        val html = note.contentBlocks.filterIsInstance<ContentBlock.Text>()
+                            .joinToString("<br>") { it.htmlContent }
+                        HtmlSpannableConverter.htmlToAnnotatedString(html)
+                    }
                     Text(
                         text = preview,
                         fontSize = 13.sp,
                         color = colorPreview,
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
                     Spacer(Modifier.height(3.dp))

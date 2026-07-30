@@ -5,12 +5,12 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    id("com.google.devtools.ksp") version "2.0.21-1.0.27"
+    id("com.google.devtools.ksp") version "2.1.0-1.0.29"
 }
 
 android {
     namespace = "com.yourname.simplenotes"
-    compileSdk = 34
+    compileSdk = 35
 
     signingConfigs {
         create("release") {
@@ -137,7 +137,7 @@ dependencies {
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
     // Rich text editor (Compose Rich Editor by Mohamed Rejeb)
-    implementation("com.mohamedrejeb.richeditor:richeditor-compose:1.0.0-rc05")
+    implementation("com.mohamedrejeb.richeditor:richeditor-compose:1.0.0-rc09")
 
     // Coil (image loading for Compose)
     implementation("io.coil-kt:coil-compose:2.5.0")

@@ -11,6 +11,8 @@ data class SettingsSnapshot(
     val defaultNoteBackground: Int,
     val showLinksEnabled: Boolean,
     val hideScrollbarEnabled: Boolean,
+    /** "default" | "comic" | "cute" | "meadow" — visual style of the note-list header/FAB. */
+    val headerStyle: String,
     /** epochMs of the last local change — last-write-wins against the Drive copy. */
     val updatedAt: Long
 )

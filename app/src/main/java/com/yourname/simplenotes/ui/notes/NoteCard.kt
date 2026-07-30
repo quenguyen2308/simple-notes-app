@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckBox
@@ -50,6 +51,8 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.yourname.simplenotes.data.local.entities.ContentBlock
 import com.yourname.simplenotes.domain.model.Note
+import com.yourname.simplenotes.ui.theme.HeaderStyle
+import com.yourname.simplenotes.util.HtmlSpannableConverter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -75,7 +78,8 @@ fun NoteCard(
     modifier: Modifier = Modifier,
     /** "Bàn Làm Việc" sticky-note look: a small stable per-note tilt plus a flat, hard-edged
      *  paper shadow instead of Material's soft blurred elevation. */
-    tilted: Boolean = false
+    tilted: Boolean = false,
+    headerStyle: HeaderStyle = HeaderStyle.DEFAULT
 ) {
     val dateText = remember(note.contentUpdatedAt) { formatCardDate(note.contentUpdatedAt) }
 
@@ -107,6 +111,13 @@ fun NoteCard(
     }
     val thumbnailUri = remember(note.contentBlocks) {
         note.contentBlocks.filterIsInstance<ContentBlock.Image>().firstOrNull()?.uri
+    }
+    // Rendered with the same bold/italic/underline/strikethrough/color spans as the editor,
+    // instead of note.content's plain-text-only extract, so formatting is visible in the preview.
+    val previewText = remember(note.contentBlocks) {
+        val html = note.contentBlocks.filterIsInstance<ContentBlock.Text>()
+            .joinToString("<br>") { it.htmlContent }
+        HtmlSpannableConverter.htmlToAnnotatedString(html)
     }
 
     Box(
@@ -163,7 +174,8 @@ fun NoteCard(
                         Spacer(Modifier.height(8.dp))
                     }
 
-                    // ── Title row ─────────────────────────────────────
+                    // ── Title row — right side reserves room for both the pin badge
+                    // and the "more" button overlay so the title never runs under them. ──
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text       = note.title.ifBlank { "Untitled" },
@@ -172,13 +184,8 @@ fun NoteCard(
                             maxLines   = 2,
                             overflow   = TextOverflow.Ellipsis,
                             color      = onCard,
-                            modifier   = Modifier.weight(1f).padding(end = 24.dp)
+                            modifier   = Modifier.weight(1f).padding(end = 50.dp)
                         )
-                        if (note.isPinned) {
-                            Icon(Icons.Default.PushPin, null,
-                                tint = onCardAccent,
-                                modifier = Modifier.size(11.dp))
-                        }
                     }
                     Spacer(Modifier.height(4.dp))
 
@@ -223,7 +230,7 @@ fun NoteCard(
                         }
                     } else if (note.content.isNotBlank()) {
                         Text(
-                            text       = note.content,
+                            text       = previewText,
                             fontSize   = 13.sp,
                             maxLines   = 6,
                             overflow   = TextOverflow.Ellipsis,
@@ -265,7 +272,7 @@ fun NoteCard(
                 ) {
                     Icon(Icons.Default.MoreVert, "More",
                         modifier = Modifier.size(14.dp),
-                        tint     = onCardVariant)
+                        tint     = styledIconTint(headerStyle, default = onCardVariant))
                 }
 
                 // ── Selection indicator (top-left) ───────────────────
@@ -277,6 +284,24 @@ fun NoteCard(
                     )
                 }
             }
+        }
+
+        // ── Pin badge — the system's own color "pushpin" emoji, bare (no backing circle),
+        // overlapping the top-left corner of the card. There's no official differently-colored
+        // pushpin emoji variant in Unicode to pick from per note, and recoloring the glyph via
+        // BlendMode.HUE corrupted the GPU compositing layer on this device, so it's just the
+        // plain emoji, keeping its natural red 3D shading. Placed OUTSIDE the Card so it isn't
+        // clipped by the card's rounded corner, on the left so it never competes with the
+        // "more" button. ──────────────────────────────────────────────────────────────────
+        if (note.isPinned) {
+            Text(
+                text = "📌",
+                fontSize = 22.sp,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .offset(x = (-6).dp, y = (-8).dp)
+                    .graphicsLayer(scaleX = -1f)
+            )
         }
     }
 }

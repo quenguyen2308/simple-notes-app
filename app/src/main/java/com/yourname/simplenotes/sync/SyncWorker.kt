@@ -8,6 +8,12 @@ import com.yourname.simplenotes.data.remote.DriveDataSource
 import com.yourname.simplenotes.data.repository.CategoryRepository
 import com.yourname.simplenotes.data.repository.NoteRepository
 import com.yourname.simplenotes.ui.settings.SettingsPrefs
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.time.Instant
 
 /**
@@ -28,7 +34,7 @@ class SyncWorker(
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result =
-        runCatching { sync() }
+        runCatching { syncMutex.withLock { sync() } }
             .fold(
                 onSuccess = { Log.i(TAG, "Sync completed successfully"); Result.success() },
                 onFailure = { e -> Log.e(TAG, "Sync failed, will retry: ${e.message}", e); Result.retry() }
@@ -37,21 +43,25 @@ class SyncWorker(
     private suspend fun sync() {
         Log.i(TAG, "Starting sync…")
 
-        // Step 1: fetch Drive index {noteId → modifiedTimeIso}
-        val driveIndex = driveDataSource.fetchIndex()
+        // Step 1: fetch Drive index {noteId → modifiedTimeIso} and the persistent tombstone
+        // list together — two independent Drive round trips, run concurrently instead of one
+        // after the other.
+        val (driveIndex, remoteDeletedNoteIds) = coroutineScope {
+            val indexDeferred = async { driveDataSource.fetchIndex() }
+            // Persistent note-deletion tombstones (mirrors categories.json's deletedIds): unlike
+            // index.json — where a purged note just disappears with no trace — this list never
+            // shrinks, so a device that missed the intermediate soft-delete (e.g. was offline
+            // while another device both deleted the note AND emptied the trash) still learns
+            // it's gone instead of keeping a ghost copy forever.
+            val deletedDeferred = async { driveDataSource.downloadDeletedNoteIds() }
+            indexDeferred.await() to deletedDeferred.await()
+        }
         Log.i(TAG, "Drive index has ${driveIndex.size} entries")
 
         // Fetched once upfront: IDs this device permanently deleted locally (via Empty Trash)
         // whose Drive-side tombstone (file + index entry) hasn't been pushed yet this pass —
         // see Step 5 below.
         val pendingDeletedIds = repository.getPendingDeletedIds()
-
-        // Persistent note-deletion tombstones (mirrors categories.json's deletedIds): unlike
-        // index.json — where a purged note just disappears with no trace — this list never
-        // shrinks, so a device that missed the intermediate soft-delete (e.g. was offline while
-        // another device both deleted the note AND emptied the trash) still learns it's gone
-        // instead of keeping a ghost copy forever.
-        val remoteDeletedNoteIds = driveDataSource.downloadDeletedNoteIds()
         val allDeletedNoteIds = remoteDeletedNoteIds + pendingDeletedIds
         if (allDeletedNoteIds.isNotEmpty()) {
             repository.purgeRemotelyDeleted(allDeletedNoteIds.toList())
@@ -93,16 +103,41 @@ class SyncWorker(
             repository.upsertFromRemote(remoteNotes)
         }
 
-        // Step 3: upload dirty local notes (skip those where Drive won the conflict)
+        // Step 3: upload dirty local notes (skip those where Drive won the conflict).
+        // Resolve existing file IDs with one list() call up front instead of one per note —
+        // a large batch (e.g. importing 100+ notes at once) doing its own lookup per note
+        // roughly doubles the Drive API calls for that sync and risks rate limiting, which
+        // fails silently here (each failed upload just stays dirty for the next sync attempt).
+        val existingNoteFileIds = if (dirtyNotes.isNotEmpty()) driveDataSource.listNoteFileIds() else emptyMap()
         val newIndex = driveIndex.toMutableMap()
-        for (note in dirtyNotes) {
-            if (note.id in notesToDownload) { Log.d(TAG, "Skipping upload of ${note.id} — Drive won"); continue }
-            if (note.id in allDeletedNoteIds) { Log.d(TAG, "Skipping upload of ${note.id} — tombstoned"); continue }
-            val modifiedTime = driveDataSource.uploadNote(note)
-            if (modifiedTime == null) { Log.w(TAG, "Upload failed for ${note.id}"); continue }
-            repository.markClean(note.id)
-            newIndex[note.id] = modifiedTime
-            Log.d(TAG, "Uploaded note ${note.id}")
+        var uploadFailures = 0
+        val notesToUpload = dirtyNotes.filter { note ->
+            when {
+                note.id in notesToDownload -> { Log.d(TAG, "Skipping upload of ${note.id} — Drive won"); false }
+                note.id in allDeletedNoteIds -> { Log.d(TAG, "Skipping upload of ${note.id} — tombstoned"); false }
+                else -> true
+            }
+        }
+        // Each upload is an independent network round trip (different note file), so they run
+        // concurrently instead of one at a time; results are applied to newIndex/markClean
+        // sequentially afterwards to avoid mutating shared state from multiple coroutines.
+        val uploadResults = coroutineScope {
+            notesToUpload
+                .map { note -> async { note.id to driveDataSource.uploadNote(note, existingNoteFileIds[note.id]) } }
+                .awaitAll()
+        }
+        uploadResults.forEach { (noteId, modifiedTime) ->
+            if (modifiedTime == null) {
+                Log.w(TAG, "Upload failed for $noteId")
+                uploadFailures++
+            } else {
+                repository.markClean(noteId)
+                newIndex[noteId] = modifiedTime
+                Log.d(TAG, "Uploaded note $noteId")
+            }
+        }
+        if (uploadFailures > 0) {
+            Log.w(TAG, "$uploadFailures of ${dirtyNotes.size} dirty notes failed to upload this pass — will retry next sync")
         }
 
         // Step 4: permanently remove notes that have been in the recycle bin for more than 30
@@ -118,10 +153,11 @@ class SyncWorker(
         val allPendingDeletedIds = repository.getPendingDeletedIds()
         if (allPendingDeletedIds.isNotEmpty()) {
             Log.i(TAG, "Deleting ${allPendingDeletedIds.size} notes from Drive")
-            allPendingDeletedIds.forEach { id ->
-                driveDataSource.deleteNote(id)
-                newIndex.remove(id)
+            // Independent per-file deletes — run concurrently.
+            coroutineScope {
+                allPendingDeletedIds.map { id -> async { driveDataSource.deleteNote(id) } }.awaitAll()
             }
+            allPendingDeletedIds.forEach { id -> newIndex.remove(id) }
         }
         // Persist the merged tombstone list (union, never shrinks) so a device that missed the
         // soft-delete step still learns about the deletion on some future sync.
@@ -135,18 +171,27 @@ class SyncWorker(
         driveDataSource.uploadIndex(newIndex)
         Log.i(TAG, "Index uploaded with ${newIndex.size} entries")
 
-        syncCategories()
-        syncSettings()
+        // Independent of each other (different Drive files, different local tables) — run
+        // concurrently instead of one after the other.
+        coroutineScope {
+            launch { syncCategories() }
+            launch { syncSettings() }
+        }
     }
 
     private suspend fun syncCategories() {
         val (remoteCategories, remoteDeletedIds) = driveDataSource.downloadCategories()
         val localCategories = categoryRepository.getAll()
         val pendingDeletedIds = categoryRepository.getPendingDeletedIds()
+        Log.i(TAG, "syncCategories: remote=${remoteCategories.size} remoteDeleted=${remoteDeletedIds.size} " +
+            "local=${localCategories.size} localPendingDeleted=${pendingDeletedIds.size}")
+        Log.d(TAG, "syncCategories: local orders=" + localCategories.map { "${it.name}:${it.order}@${it.updatedAt}" })
+        Log.d(TAG, "syncCategories: remote orders=" + remoteCategories.map { "${it.name}:${it.order}@${it.updatedAt}" })
 
         if (remoteCategories.isEmpty() && remoteDeletedIds.isEmpty()) {
             // First sync from this device (or signed out / offline) — upload local categories
             if (localCategories.isNotEmpty() || pendingDeletedIds.isNotEmpty()) {
+                Log.i(TAG, "syncCategories: no remote payload — uploading ${localCategories.size} local categories as-is")
                 driveDataSource.uploadCategories(localCategories, pendingDeletedIds)
                 categoryRepository.clearPendingDeletedIds()
             }
@@ -164,28 +209,13 @@ class SyncWorker(
 
         // Merge: all deleted IDs = remote + local pending
         val allDeletedIds = remoteDeletedIds + pendingDeletedIds
-
-        // Last-write-wins per category ID (mirrors note sync's updatedAt comparison), so a
-        // local edit (e.g. folder color change) isn't clobbered by a stale remote copy that
-        // hasn't caught up yet.
-        val remoteById = remoteCategories.associateBy { it.id }
-        val localById = localCategories.associateBy { it.id }
-        val merged = (remoteById.keys + localById.keys)
-            .filter { it !in allDeletedIds }
-            .map { id ->
-                val remote = remoteById[id]
-                val local = localById[id]
-                when {
-                    remote == null -> local!!
-                    local == null -> remote
-                    local.updatedAt > remote.updatedAt -> local
-                    else -> remote
-                }
-            }
+        val merged = mergeCategories(localCategories, remoteCategories, allDeletedIds)
+        Log.i(TAG, "syncCategories: merged=" + merged.map { "${it.name}:${it.order}@${it.updatedAt}" })
 
         categoryRepository.upsertAll(merged)
         driveDataSource.uploadCategories(merged, allDeletedIds)
         categoryRepository.clearPendingDeletedIds()
+        Log.i(TAG, "syncCategories: wrote merged order locally and uploaded to Drive")
 
         // Defensive healing pass (see NoteDao.clearOrphanedFolderRefs): a note whose folder was
         // deleted on another device before this device's copy of that note got reassigned to
@@ -217,5 +247,14 @@ class SyncWorker(
         const val WORK_NAME_PERIODIC = "sync_periodic"
         const val WORK_NAME_IMMEDIATE = "sync_immediate"
         private const val TAG = "SyncWorker"
+
+        // Periodic and immediate syncs are enqueued under different unique-work names, so
+        // WorkManager's REPLACE policy (which only dedupes within the same name) doesn't stop
+        // them from running at the same time. Two overlapping sync() calls both racing to
+        // create a not-yet-existing Drive file (index.json, categories.json, …) is exactly how
+        // this app ended up with duplicate files silently splitting devices' view of what's on
+        // Drive (see DriveDataSource.findFileId). This mutex makes sync() itself exclusive
+        // regardless of which WorkManager job triggered it.
+        private val syncMutex = Mutex()
     }
 }

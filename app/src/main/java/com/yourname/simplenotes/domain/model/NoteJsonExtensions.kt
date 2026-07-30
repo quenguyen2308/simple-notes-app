@@ -3,13 +3,19 @@ package com.yourname.simplenotes.domain.model
 import com.yourname.simplenotes.data.local.entities.ContentBlock
 import com.yourname.simplenotes.data.local.entities.toContentBlocks
 import com.yourname.simplenotes.data.local.entities.toJson
+import com.yourname.simplenotes.util.toEditorHtml
 import org.json.JSONArray
 import org.json.JSONObject
 
 /**
  * Serializes a note to JSON for Drive storage.
- * Includes all fields needed for full fidelity sync across devices.
- * isDirty and isLocked/pinHash are device-local and not included.
+ * Includes all fields needed for full fidelity sync across devices, EXCEPT:
+ *  - isDirty — device-local (sync bookkeeping only).
+ *  - pinHash — a per-note PIN's bcrypt hash is device-set-up-specific and, as it happens,
+ *    unused by the current unlock flow anyway (every lock/unlock path authenticates via
+ *    BiometricHelper's device credential prompt, not a pinHash comparison), so there's no
+ *    reason to ship it around.
+ * isLocked itself DOES sync — see fromJson()'s doc for why.
  */
 fun Note.toJson(): String = JSONObject().apply {
     put("id", id)
@@ -24,13 +30,17 @@ fun Note.toJson(): String = JSONObject().apply {
     put("updatedAt", updatedAt)
     put("contentUpdatedAt", contentUpdatedAt)
     put("isDeleted", isDeleted)
+    put("isLocked", isLocked)
 }.toString()
 
 /**
  * Deserializes a note from Drive JSON.
- * Backward-compatible: old files without contentBlocksJson fall back to plain text.
+ * Backward-compatible: old files without contentBlocksJson (or isLocked) fall back to
+ * plain text / false respectively.
  * isDirty = false — data from Drive is already synced.
- * isLocked/pinHash are device-local and default to false/null.
+ * isLocked syncs across devices (locking a note on one device locks it everywhere); pinHash
+ * stays device-local and always comes back null — see toJson()'s doc for why that's fine:
+ * unlocking always goes through the receiving device's own biometric/credential prompt.
  */
 fun Note.Companion.fromJson(json: String): Note {
     val obj = JSONObject(json)
@@ -39,11 +49,11 @@ fun Note.Companion.fromJson(json: String): Note {
         runCatching { obj.getString("contentBlocksJson").toContentBlocks() }
             .getOrElse {
                 val plain = obj.optString("content", "")
-                listOf(ContentBlock.Text(text = plain, htmlContent = plain))
+                listOf(ContentBlock.Text(text = plain, htmlContent = plain.toEditorHtml()))
             }
     } else {
         val plain = obj.optString("content", "")
-        listOf(ContentBlock.Text(text = plain, htmlContent = plain))
+        listOf(ContentBlock.Text(text = plain, htmlContent = plain.toEditorHtml()))
     }
 
     val labelsArray = obj.optJSONArray("labels")
@@ -64,6 +74,7 @@ fun Note.Companion.fromJson(json: String): Note {
         // Backward-compatible: notes uploaded before this field existed fall back to updatedAt.
         contentUpdatedAt = obj.optLong("contentUpdatedAt", obj.getLong("updatedAt")),
         isDirty        = false,
-        isDeleted      = obj.optBoolean("isDeleted", false)
+        isDeleted      = obj.optBoolean("isDeleted", false),
+        isLocked       = obj.optBoolean("isLocked", false)
     )
 }

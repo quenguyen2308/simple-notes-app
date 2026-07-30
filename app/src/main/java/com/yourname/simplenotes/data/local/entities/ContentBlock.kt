@@ -2,6 +2,7 @@ package com.yourname.simplenotes.data.local.entities
 
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import com.yourname.simplenotes.util.toEditorHtml
 
 // ─── Domain sealed class ────────────────────────────────────────────────────
 
@@ -128,7 +129,7 @@ fun String.toContentBlocks(): List<ContentBlock> {
         jsonList.mapNotNull { it.toDomain() }
     } catch (e: Exception) {
         // Fallback: treat raw string as a single plain-text block (migration safety)
-        listOf(ContentBlock.Text(text = this, htmlContent = this))
+        listOf(ContentBlock.Text(text = this, htmlContent = this.toEditorHtml()))
     }
 }
 

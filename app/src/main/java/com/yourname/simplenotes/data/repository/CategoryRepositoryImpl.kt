@@ -51,7 +51,8 @@ class CategoryRepositoryImpl(
         dao.updateParent(folderId, newParentId)
 
     override suspend fun reorderFolders(parentId: String?, folderIds: List<String>) {
-        folderIds.forEachIndexed { index, id -> dao.updateOrder(id, index) }
+        dao.updateOrders(folderIds)
+        syncScheduler.triggerImmediateSync()
     }
 
     override suspend fun getPendingDeletedIds(): Set<String> = syncPrefs.pendingDeletedIds

@@ -1,7 +1,11 @@
 package com.yourname.simplenotes.ui.editor
 
+import android.content.Context
 import android.content.Intent
 import android.provider.Settings
+import android.view.inputmethod.InputMethodManager
+import android.widget.EditText
+import androidx.core.text.HtmlCompat
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -11,7 +15,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -23,7 +26,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -31,32 +33,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.mohamedrejeb.richeditor.ui.material3.RichTextEditorDefaults
 import com.yourname.simplenotes.util.BiometricHelper
 import org.koin.androidx.compose.koinViewModel
 import java.text.SimpleDateFormat
 import java.util.*
-
-/** Icon-over-label bottom toolbar button (Image / Checkbox / Màu). */
-@Composable
-private fun LabeledToolbarButton(
-    icon: ImageVector,
-    label: String,
-    isActive: Boolean = false,
-    onClick: () -> Unit
-) {
-    val color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .clip(RoundedCornerShape(14.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 6.dp)
-    ) {
-        Icon(icon, contentDescription = label, tint = color, modifier = Modifier.size(20.dp))
-        Text(label, fontSize = 10.sp, color = color)
-    }
-}
 
 /** Small pill chip for the time/tag row under the title (e.g. "14:30, Hôm nay", "#Tag"). */
 @Composable
@@ -96,6 +76,17 @@ fun NoteEditorScreen(
     var showCategoryDialog    by remember { mutableStateOf(false) }
     var showLabelsDialog      by remember { mutableStateOf(false) }
     var showNoPasscodeDialog  by remember { mutableStateOf(false) }
+    /** Reference to the EditText inside AndroidRichTextEditor, used by the toolbar. */
+    var editTextRef            by remember { mutableStateOf<EditText?>(null) }
+
+    // The EditText is a native View hosted via AndroidView, not a Compose text field, so
+    // removing it from composition on back-navigation does NOT auto-dismiss its IME session —
+    // the keyboard stays visible over the note list until manually dismissed here.
+    fun hideKeyboard() {
+        val et = editTextRef ?: return
+        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+        imm?.hideSoftInputFromWindow(et.windowToken, 0)
+    }
 
     val topBarLabel = remember(viewModel.createdAtMs) {
         val ms = if (viewModel.createdAtMs > 0L) viewModel.createdAtMs else System.currentTimeMillis()
@@ -113,7 +104,7 @@ fun NoteEditorScreen(
     val backDispatcher = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
     DisposableEffect(backDispatcher) {
         val cb = object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() { viewModel.save(); onBack() }
+            override fun handleOnBackPressed() { hideKeyboard(); viewModel.save(); onBack() }
         }
         backDispatcher?.addCallback(cb)
         onDispose { cb.remove() }
@@ -136,7 +127,7 @@ fun NoteEditorScreen(
         topBar = {
             TopAppBar(
                 navigationIcon = {
-                    IconButton(onClick = { viewModel.save(); onBack() }) {
+                    IconButton(onClick = { hideKeyboard(); viewModel.save(); onBack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Quay lại", tint = onEditorBgMuted)
                     }
                 },
@@ -191,7 +182,7 @@ fun NoteEditorScreen(
                                                 appendLine("${if (item.isCompleted) "☑" else "☐"} ${item.text}")
                                             }
                                         } else {
-                                            append(viewModel.richTextState.annotatedString.text)
+                                            append(HtmlCompat.fromHtml(viewModel.htmlContent, HtmlCompat.FROM_HTML_MODE_COMPACT))
                                         }
                                     }
                                     context.startActivity(Intent.createChooser(
@@ -231,47 +222,22 @@ fun NoteEditorScreen(
                 shadowElevation = 6.dp,
                 tonalElevation  = 2.dp
             ) {
-                Row(
+                EditorToolbar(
+                    editText = editTextRef,
+                    isChecklistActive = viewModel.isChecklistMode,
+                    canUndo = viewModel.canUndo,
+                    canRedo = viewModel.canRedo,
+                    onUndo = viewModel::undo,
+                    onRedo = viewModel::redo,
+                    onChecklistToggle = viewModel::toggleChecklistMode,
+                    onInsertImage = { galleryLauncher.launch("image/*") },
+                    onOpenNoteColorPicker = { showColorDialog = true },
+                    onHtmlChange = viewModel::onHtmlContentChange,
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 6.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    verticalAlignment     = Alignment.CenterVertically
-                ) {
-                    // Insert image
-                    LabeledToolbarButton(
-                        icon    = Icons.Default.Image,
-                        label   = "Image",
-                        onClick = { galleryLauncher.launch("image/*") }
-                    )
-                    // Toggle checklist / rich-text mode
-                    LabeledToolbarButton(
-                        icon     = if (viewModel.isChecklistMode) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
-                        label    = "Checkbox",
-                        isActive = viewModel.isChecklistMode,
-                        onClick  = viewModel::toggleChecklistMode
-                    )
-                    // Background color
-                    LabeledToolbarButton(
-                        icon    = Icons.Default.Palette,
-                        label   = "Màu",
-                        onClick = { showColorDialog = true }
-                    )
-
-                    // Rich-text formatting controls (hidden in checklist mode) share the
-                    // same floating pill instead of a second stacked bar.
-                    if (!viewModel.isChecklistMode) {
-                        Box(
-                            modifier = Modifier
-                                .padding(horizontal = 4.dp)
-                                .height(24.dp)
-                                .width(1.dp)
-                                .background(MaterialTheme.colorScheme.outlineVariant)
-                        )
-                        RichTextFormattingRow(state = viewModel.richTextState)
-                    }
-                }
+                        .padding(horizontal = 6.dp, vertical = 4.dp)
+                )
             }
         }
     ) { padding ->
@@ -343,7 +309,7 @@ fun NoteEditorScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .padding(horizontal = 12.dp)
+                    .padding(horizontal = 4.dp)
                     .padding(bottom = 4.dp),
                 color = MaterialTheme.colorScheme.surface,
                 shape = RoundedCornerShape(20.dp)
@@ -353,7 +319,7 @@ fun NoteEditorScreen(
                     NoteImageSection(
                         imageBlocks = viewModel.imageBlocks,
                         onRemoveImage = viewModel::removeImage,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
                     )
 
                     // Content area
@@ -367,21 +333,15 @@ fun NoteEditorScreen(
                             modifier = Modifier.fillMaxSize()
                         )
                     } else {
-                        com.mohamedrejeb.richeditor.ui.material3.RichTextEditor(
-                            state = viewModel.richTextState,
+                        AndroidRichTextEditor(
+                            html = viewModel.htmlContent,
+                            onHtmlChange = viewModel::onHtmlContentChange,
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 14.sp),
+                            textColor = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            textStyle = MaterialTheme.typography.bodyLarge.copy(
-                                fontSize = 14.sp,
-                                color = MaterialTheme.colorScheme.onSurface
-                            ),
-                            colors = RichTextEditorDefaults.richTextEditorColors(
-                                containerColor = Color.Transparent,
-                                focusedIndicatorColor = Color.Transparent,
-                                unfocusedIndicatorColor = Color.Transparent,
-                                cursorColor = MaterialTheme.colorScheme.primary,
-                            )
+                                .padding(horizontal = 6.dp, vertical = 12.dp),
+                            onEditTextReady = { editTextRef = it }
                         )
                     }
                 }

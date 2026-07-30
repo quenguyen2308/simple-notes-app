@@ -152,7 +152,6 @@ data class FormatState(
     val isStrikethrough: Boolean = false,
     val isHighlighted: Boolean = false,
     val textColor: Color? = null,
-    val backgroundColor: Color? = null,
     val fontSizePx: Int? = null
 )
 
@@ -199,7 +198,7 @@ fun getFormatState(editText: android.widget.EditText): FormatState {
     return FormatState(
         isBold = bold, isItalic = italic, isUnderline = underline,
         isStrikethrough = strike, isHighlighted = bgColor == HIGHLIGHT_COLOR,
-        textColor = fgColor, backgroundColor = bgColor, fontSizePx = fontSize
+        textColor = fgColor, fontSizePx = fontSize
     )
 }
 
@@ -260,22 +259,6 @@ fun setTextColor(editText: android.widget.EditText, color: Color?) {
         setSpan<ForegroundColorSpan>(text, selStart, selEnd) { ForegroundColorSpan(color.toArgb()) }
     } else {
         text.getSpans(selStart, selEnd, ForegroundColorSpan::class.java).forEach { text.removeSpan(it) }
-    }
-}
-
-/**
- * Sets the background/highlight color at the current selection in an EditText.
- * If [color] is null, removes the background span.
- */
-fun setBackgroundColor(editText: android.widget.EditText, color: Color?) {
-    val selStart = editText.selectionStart
-    val selEnd = editText.selectionEnd
-    if (selStart < 0) return
-    val text = editText.text as? Spannable ?: return
-    if (color == null) {
-        text.getSpans(selStart, selEnd, BackgroundColorSpan::class.java).forEach { text.removeSpan(it) }
-    } else {
-        text.setSpan(BackgroundColorSpan(color.toArgb()), selStart, selEnd, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
     }
 }
 

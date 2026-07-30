@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -96,7 +97,6 @@ fun EditorToolbar(
     var showLinkDialog by remember { mutableStateOf(false) }
     var showMoreMenu by remember { mutableStateOf(false) }
     var showTextColorPicker by remember { mutableStateOf(false) }
-    var showBgColorPicker by remember { mutableStateOf(false) }
 
     Row(
         modifier = modifier,
@@ -163,11 +163,6 @@ fun EditorToolbar(
                                 onClick = { showMoreMenu = false; showTextColorPicker = true }
                             )
                             DropdownMenuItem(
-                                text = { Text("Màu nền chữ") },
-                                leadingIcon = { Icon(Icons.Default.FormatColorFill, null) },
-                                onClick = { showMoreMenu = false; showBgColorPicker = true }
-                            )
-                            DropdownMenuItem(
                                 text = { Text("Màu nền ghi chú") },
                                 leadingIcon = { Icon(Icons.Default.Palette, null) },
                                 onClick = { showMoreMenu = false; onOpenNoteColorPicker() }
@@ -227,15 +222,9 @@ fun EditorToolbar(
     if (showTextColorPicker) {
         ColorPickerDialog(
             title = "Màu chữ",
+            currentColor = formatState.textColor,
             onColorSelected = { color -> editText?.let { setTextColor(it, color) }; syncHtml(); showTextColorPicker = false },
             onDismiss = { showTextColorPicker = false }
-        )
-    }
-    if (showBgColorPicker) {
-        ColorPickerDialog(
-            title = "Màu nền chữ",
-            onColorSelected = { color -> editText?.let { setBackgroundColor(it, color) }; syncHtml(); showBgColorPicker = false },
-            onDismiss = { showBgColorPicker = false }
         )
     }
 }
@@ -304,35 +293,57 @@ private fun ToolbarDivider() {
     )
 }
 
+/** Full Material Design palette (500-weight hues) plus black/white/grey — 24 colors total. */
+private val COLOR_SWATCHES = listOf(
+    Color.Black, Color(0xFF424242), Color(0xFF9E9E9E), Color(0xFF607D8B), Color(0xFFBDBDBD), Color.White,
+    Color(0xFFF44336), Color(0xFFE91E63), Color(0xFF9C27B0), Color(0xFF673AB7), Color(0xFF3F51B5), Color(0xFF2196F3),
+    Color(0xFF03A9F4), Color(0xFF00BCD4), Color(0xFF009688), Color(0xFF4CAF50), Color(0xFF8BC34A), Color(0xFFCDDC39),
+    Color(0xFFFFEB3B), Color(0xFFFFC107), Color(0xFFFF9800), Color(0xFFFF5722), Color(0xFF795548), Color(0xFF1259C3),
+)
+
 @Composable
-private fun ColorPickerDialog(title: String, onColorSelected: (Color) -> Unit, onDismiss: () -> Unit) {
-    val swatches = listOf(
-        Color.Black, Color.DarkGray, Color.Red, Color(0xFFE91E63),
-        Color(0xFF9C27B0), Color(0xFF1259C3), Color(0xFF00BCD4),
-        Color(0xFF4CAF50), Color(0xFFCDDC39), Color(0xFFFF9800),
-        Color(0xFFFF5722), Color.White
-    )
+private fun ColorPickerDialog(
+    title: String,
+    currentColor: Color?,
+    onColorSelected: (Color) -> Unit,
+    onDismiss: () -> Unit
+) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                swatches.chunked(6).forEach { row ->
+                COLOR_SWATCHES.chunked(6).forEach { row ->
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         row.forEach { color ->
+                            val isSelected = color == currentColor
                             Box(
+                                contentAlignment = Alignment.Center,
                                 modifier = Modifier
                                     .size(36.dp)
                                     .clip(CircleShape)
                                     .background(color)
-                                    .border(1.dp, Color(0xFFDDDDDD), CircleShape)
+                                    .border(
+                                        if (isSelected) 2.dp else 1.dp,
+                                        if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFFDDDDDD),
+                                        CircleShape
+                                    )
                                     .clickable { onColorSelected(color) }
-                            )
+                            ) {
+                                if (isSelected) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "Đang chọn",
+                                        modifier = Modifier.size(18.dp),
+                                        tint = if (color.luminance() > 0.5f) Color.Black else Color.White
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Hủy") } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Xong") } }
     )
 }

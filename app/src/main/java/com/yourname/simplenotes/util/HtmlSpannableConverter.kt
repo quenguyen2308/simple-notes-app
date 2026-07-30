@@ -203,12 +203,12 @@ object HtmlSpannableConverter {
             if (startsHere(strike)) builder.append("<s>")
             if (fg != null && startsHere(fg)) {
                 builder.append("<font color=\"#")
-                builder.append(fg.foregroundColor.toString(16).padStart(8, '0').takeLast(6))
+                builder.append(rgbHex(fg.foregroundColor))
                 builder.append("\">")
             }
             if (bg != null && startsHere(bg)) {
                 builder.append("<font bgcolor=\"#")
-                builder.append(bg.backgroundColor.toString(16).padStart(8, '0').takeLast(6))
+                builder.append(rgbHex(bg.backgroundColor))
                 builder.append("\">")
             }
             if (sizeUp != null && startsHere(sizeUp)) {
@@ -387,6 +387,17 @@ object HtmlSpannableConverter {
             }
         }
     }
+
+    /**
+     * Hex-encodes the RGB bits of an ARGB color int as "rrggbb".
+     *
+     * Int.toString(16) is wrong here: any opaque color (alpha 0xFF) sets the sign bit, so the
+     * ARGB int is negative, and Kotlin/Java's toString(radix) renders negative numbers as a
+     * "-" followed by the hex digits of the *magnitude* — not two's-complement hex — which
+     * silently produced the wrong RGB value (or an invalid one) for almost every color.
+     */
+    private fun rgbHex(argb: Int): String =
+        (argb and 0xFFFFFF).toString(16).padStart(6, '0')
 
     private fun parseColor(colorStr: String): Int {
         return try {

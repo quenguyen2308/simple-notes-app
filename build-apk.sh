@@ -43,12 +43,12 @@ echo "Building APK ($BUILD_TYPE)..."
 ./gradlew "assemble${TASK_SUFFIX}"
 
 timestamp=$(date +%Y%m%d_%H%M%S)
-SOURCE_APK="app/build/outputs/apk/${BUILD_TYPE}/app-${BUILD_TYPE}.apk"
+SOURCE_APK="app/build/outputs/apk/${BUILD_TYPE}/MyNotes-${BUILD_TYPE}.apk"
 
 if [[ "$BUILD_TYPE" == "release" ]]; then
     # Nếu chưa cấu hình signing, AGP sẽ ra file "-unsigned"
     if [[ ! -f "$SOURCE_APK" ]]; then
-        SOURCE_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+        SOURCE_APK="app/build/outputs/apk/release/MyNotes-release-unsigned.apk"
     fi
 fi
 
@@ -67,7 +67,7 @@ if [[ ! -f "$SOURCE_APK" ]]; then
 fi
 
 mkdir -p apk-releases
-DEST_APK="apk-releases/SimpleNotes_${BUILD_TYPE}_${timestamp}.apk"
+DEST_APK="apk-releases/MyNotes_${BUILD_TYPE}_${timestamp}.apk"
 cp "$SOURCE_APK" "$DEST_APK"
 
 echo "Done: $DEST_APK"

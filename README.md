@@ -1,4 +1,4 @@
-# Simple Notes
+# My Notes
 
 Ứng dụng ghi chú Android viết bằng **Jetpack Compose**, hỗ trợ nội dung phong phú (văn bản định dạng, checklist, hình ảnh, bản vẽ), tổ chức theo thư mục nhiều cấp, khóa từng ghi chú bằng vân tay/PIN, và đồng bộ hai chiều với **Google Drive**.
 

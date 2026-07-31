@@ -44,6 +44,15 @@ android {
         buildConfig = true
     }
 
+    applicationVariants.all {
+        val variant = this
+        outputs
+            .map { it as com.android.build.gradle.internal.api.BaseVariantOutputImpl }
+            .forEach { output ->
+                output.outputFileName = "MyNotes-${variant.buildType.name}.apk"
+            }
+    }
+
     composeOptions {
         // Compose compiler version matching Kotlin 1.9.21
         kotlinCompilerExtensionVersion = "1.5.6"

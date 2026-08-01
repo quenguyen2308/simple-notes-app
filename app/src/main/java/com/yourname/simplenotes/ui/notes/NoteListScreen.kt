@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
@@ -48,8 +49,10 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -216,6 +219,7 @@ fun NoteListScreen(
         }
     }
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     val account = remember { GoogleSignIn.getLastSignedInAccount(context) }
     val accountPhotoUrl = account?.photoUrl
 
@@ -815,7 +819,10 @@ fun NoteListScreen(
                                     },
                                     onLongPress = {
                                         if (isSelectionMode) toggleSelection(note.id)
-                                        else enterSelectionMode(note.id)
+                                        else {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            enterSelectionMode(note.id)
+                                        }
                                     },
                                     onShowActions = { bottomSheetNote = note },
                                     headerStyle = headerStyle,
@@ -886,7 +893,10 @@ fun NoteListScreen(
                                     },
                                     onLongPress = {
                                         if (isSelectionMode) toggleSelection(note.id)
-                                        else enterSelectionMode(note.id)
+                                        else {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            enterSelectionMode(note.id)
+                                        }
                                     },
                                     onShowActions = { bottomSheetNote = note },
                                     headerStyle = headerStyle,
@@ -1433,7 +1443,7 @@ private fun NotesSortBar(
 
         // Grid / List toggle
         Icon(
-            if (viewType == NoteViewType.GRID) Icons.Default.ViewList else Icons.Default.GridView,
+            if (viewType == NoteViewType.GRID) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView,
             contentDescription = if (viewType == NoteViewType.GRID) "List view" else "Grid view",
             modifier = Modifier.size(16.dp).clickable { onToggleView() },
             tint     = tint

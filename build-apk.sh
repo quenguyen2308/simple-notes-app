@@ -66,8 +66,8 @@ if [[ ! -f "$SOURCE_APK" ]]; then
     exit 1
 fi
 
-mkdir -p apk-releases
-DEST_APK="apk-releases/MyNotes_${BUILD_TYPE}_${timestamp}.apk"
+mkdir -p MyNotes_apk
+DEST_APK="MyNotes_apk/MyNotes_${BUILD_TYPE}_${timestamp}.apk"
 cp "$SOURCE_APK" "$DEST_APK"
 
 echo "Done: $DEST_APK"

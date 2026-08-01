@@ -820,7 +820,7 @@ fun NoteListScreen(
                                     onLongPress = {
                                         if (isSelectionMode) toggleSelection(note.id)
                                         else {
-                                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS, HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING)
                                             enterSelectionMode(note.id)
                                         }
                                     },
@@ -894,7 +894,7 @@ fun NoteListScreen(
                                     onLongPress = {
                                         if (isSelectionMode) toggleSelection(note.id)
                                         else {
-                                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS, HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING)
                                             enterSelectionMode(note.id)
                                         }
                                     },
@@ -1706,48 +1706,50 @@ private fun SelectionActionBar(
     onLock: () -> Unit
 ) {
     Surface(
-        modifier  = Modifier.fillMaxWidth(),
-        color     = MaterialTheme.colorScheme.primaryContainer,
+        modifier        = Modifier.fillMaxWidth(),
+        color           = MaterialTheme.colorScheme.primaryContainer,
         shadowElevation = 8.dp
     ) {
         Row(
-            modifier              = Modifier.fillMaxWidth().padding(horizontal = 8.dp).height(56.dp),
+            modifier              = Modifier.fillMaxWidth().padding(horizontal = 12.dp).height(56.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment     = Alignment.CenterVertically
         ) {
-            Text("$selectedCount đã chọn", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 8.dp))
-            Row {
-                StyledIconButton(
-                    style = headerStyle,
-                    onClick = onSelectAll,
-                    icon = if (allSelected) Icons.Default.Deselect else Icons.Default.SelectAll,
-                    contentDescription = if (allSelected) "Bỏ chọn tất cả" else "Chọn tất cả",
-                    size = 40.dp, iconSize = 20.dp
-                )
-                StyledIconButton(
-                    style = headerStyle,
-                    onClick = onMoveToFolder,
-                    icon = Icons.AutoMirrored.Filled.DriveFileMove,
-                    contentDescription = "Chuyển thư mục",
-                    size = 40.dp, iconSize = 20.dp
-                )
-                StyledIconButton(
-                    style = headerStyle,
-                    onClick = onLock,
-                    icon = if (allSelectedLocked) Icons.Default.LockOpen else Icons.Default.Lock,
-                    contentDescription = if (allSelectedLocked) "Mở khóa" else "Khóa",
-                    size = 40.dp, iconSize = 20.dp
-                )
-                // Delete keeps Material's error-red tint regardless of style — a destructive
-                // action shouldn't lose its semantic color for the sake of theming.
-                IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, "Xóa", tint = MaterialTheme.colorScheme.error) }
-                StyledIconButton(
-                    style = headerStyle,
-                    onClick = onDeselect,
-                    icon = Icons.Default.Close,
-                    contentDescription = "Bỏ chọn",
-                    size = 40.dp, iconSize = 20.dp
-                )
+            Text("$selectedCount đã chọn", style = MaterialTheme.typography.titleSmall)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment     = Alignment.CenterVertically
+            ) {
+                FilledTonalIconButton(onClick = onSelectAll, modifier = Modifier.size(40.dp)) {
+                    Icon(
+                        if (allSelected) Icons.Default.Deselect else Icons.Default.SelectAll,
+                        contentDescription = if (allSelected) "Bỏ chọn tất cả" else "Chọn tất cả",
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                FilledTonalIconButton(onClick = onMoveToFolder, modifier = Modifier.size(40.dp)) {
+                    Icon(Icons.AutoMirrored.Filled.DriveFileMove, "Chuyển thư mục", modifier = Modifier.size(20.dp))
+                }
+                FilledTonalIconButton(onClick = onLock, modifier = Modifier.size(40.dp)) {
+                    Icon(
+                        if (allSelectedLocked) Icons.Default.LockOpen else Icons.Default.Lock,
+                        contentDescription = if (allSelectedLocked) "Mở khóa" else "Khóa",
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                FilledTonalIconButton(
+                    onClick = onDelete,
+                    modifier = Modifier.size(40.dp),
+                    colors = IconButtonDefaults.filledTonalIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                        contentColor   = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                ) {
+                    Icon(Icons.Default.Delete, "Xóa", modifier = Modifier.size(20.dp))
+                }
+                FilledTonalIconButton(onClick = onDeselect, modifier = Modifier.size(40.dp)) {
+                    Icon(Icons.Default.Close, "Bỏ chọn", modifier = Modifier.size(20.dp))
+                }
             }
         }
     }

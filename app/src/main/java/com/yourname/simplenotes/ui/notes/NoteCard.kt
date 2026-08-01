@@ -36,7 +36,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
+import androidx.compose.ui.hapticfeedback.HapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,6 +60,10 @@ import com.yourname.simplenotes.util.HtmlSpannableConverter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+private val NoOpHapticFeedback = object : HapticFeedback {
+    override fun performHapticFeedback(hapticFeedbackType: HapticFeedbackType) = Unit
+}
 
 private fun formatCardDate(epochMs: Long): String {
     val diff = System.currentTimeMillis() - epochMs
@@ -141,6 +149,9 @@ fun NoteCard(
         }
 
         // ── Card box: content only ───────────────────────────────────
+        // Suppress combinedClickable's built-in haptic so NoteListScreen can fire
+        // its own haptic only when entering selection mode (not on every long press).
+        CompositionLocalProvider(LocalHapticFeedback provides NoOpHapticFeedback) {
         Card(
             modifier  = Modifier
                 .fillMaxWidth()
@@ -285,6 +296,7 @@ fun NoteCard(
                 }
             }
         }
+        } // end CompositionLocalProvider
 
         // ── Pin badge — the system's own color "pushpin" emoji, bare (no backing circle),
         // overlapping the top-left corner of the card. There's no official differently-colored

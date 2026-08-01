@@ -62,11 +62,14 @@ fun AndroidRichTextEditor(
                     dpToPx(ctx, 6),
                     dpToPx(ctx, 12)
                 )
-                // Multi-line, no autocorrect/suggestions — just like Samsung Notes
+                // Multi-line, no autocorrect/suggestions — just like Samsung Notes.
+                // Do NOT add TYPE_TEXT_VARIATION_VISIBLE_PASSWORD here: many IMEs (Gboard
+                // Telex/VNI, Laban Key, etc.) disable diacritic/tone-mark composition when a
+                // field reports itself as a password field, which silently breaks Vietnamese
+                // text input (dấu can't be applied).
                 inputType = android.text.InputType.TYPE_CLASS_TEXT or
                         android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or
-                        android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or
-                        android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                        android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
                 imeOptions = EditorInfo.IME_ACTION_NEXT
                 isHorizontalScrollBarEnabled = false
                 isVerticalScrollBarEnabled = false

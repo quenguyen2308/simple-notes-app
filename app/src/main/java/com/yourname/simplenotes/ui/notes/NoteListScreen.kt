@@ -49,8 +49,10 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import android.view.HapticFeedbackConstants
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -217,6 +219,7 @@ fun NoteListScreen(
         }
     }
     val context = LocalContext.current
+    val view = LocalView.current
     val account = remember { GoogleSignIn.getLastSignedInAccount(context) }
     val accountPhotoUrl = account?.photoUrl
 
@@ -816,7 +819,10 @@ fun NoteListScreen(
                                     },
                                     onLongPress = {
                                         if (isSelectionMode) toggleSelection(note.id)
-                                        else enterSelectionMode(note.id)
+                                        else {
+                                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                            enterSelectionMode(note.id)
+                                        }
                                     },
                                     onShowActions = { bottomSheetNote = note },
                                     headerStyle = headerStyle,
@@ -887,7 +893,10 @@ fun NoteListScreen(
                                     },
                                     onLongPress = {
                                         if (isSelectionMode) toggleSelection(note.id)
-                                        else enterSelectionMode(note.id)
+                                        else {
+                                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                            enterSelectionMode(note.id)
+                                        }
                                     },
                                     onShowActions = { bottomSheetNote = note },
                                     headerStyle = headerStyle,

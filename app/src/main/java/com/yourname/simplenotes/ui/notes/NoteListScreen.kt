@@ -800,7 +800,10 @@ fun NoteListScreen(
                                     },
                                     onNoteLongPress = { note ->
                                         if (isSelectionMode) toggleSelection(note.id)
-                                        else enterSelectionMode(note.id)
+                                        else {
+                                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS, HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING)
+                                            enterSelectionMode(note.id)
+                                        }
                                     },
                                     onShowActions = { note -> bottomSheetNote = note },
                                     headerStyle   = headerStyle
@@ -869,7 +872,10 @@ fun NoteListScreen(
                                     },
                                     onNoteLongPress = { note ->
                                         if (isSelectionMode) toggleSelection(note.id)
-                                        else enterSelectionMode(note.id)
+                                        else {
+                                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS, HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING)
+                                            enterSelectionMode(note.id)
+                                        }
                                     },
                                     onShowActions = { note -> bottomSheetNote = note },
                                     headerStyle   = headerStyle

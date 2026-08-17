@@ -303,15 +303,15 @@ fun NoteEditorScreen(
 
             Spacer(Modifier.height(12.dp))
 
-            // Content card — the actual note body floats on a neutral surface, distinct from
-            // the colored identity area above (title/time/tags).
+            // Content card — same background as the note's identity area so the whole screen
+            // reads as one unified colored surface when a custom note color is active.
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
                     .padding(horizontal = 4.dp)
                     .padding(bottom = 4.dp),
-                color = MaterialTheme.colorScheme.surface,
+                color = editorBg,
                 shape = RoundedCornerShape(20.dp)
             ) {
                 Column(Modifier.fillMaxSize()) {
@@ -337,7 +337,7 @@ fun NoteEditorScreen(
                             html = viewModel.htmlContent,
                             onHtmlChange = viewModel::onHtmlContentChange,
                             textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 14.sp),
-                            textColor = MaterialTheme.colorScheme.onSurface,
+                            textColor = onEditorBg,
                             modifier = Modifier
                                 .fillMaxSize()
                                 .padding(horizontal = 6.dp, vertical = 12.dp),

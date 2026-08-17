@@ -55,7 +55,7 @@ fun AndroidRichTextEditor(
 
     androidx.compose.ui.viewinterop.AndroidView(
         factory = { ctx ->
-            android.widget.EditText(ctx).apply {
+            ScrollAwareEditText(ctx).apply {
                 setPadding(
                     dpToPx(ctx, 6),
                     dpToPx(ctx, 12),
@@ -80,8 +80,7 @@ fun AndroidRichTextEditor(
 
                 gravity = android.view.Gravity.TOP or android.view.Gravity.START
                 isFocusable = true
-                isFocusableInTouchMode = true
-                showSoftInputOnFocus = true
+                // isFocusableInTouchMode and showSoftInputOnFocus are managed by ScrollAwareEditText
 
                 // Load initial content
                 val spannable = HtmlSpannableConverter.htmlToSpannable(html)

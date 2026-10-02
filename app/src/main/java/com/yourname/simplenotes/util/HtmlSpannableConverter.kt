@@ -154,9 +154,35 @@ object HtmlSpannableConverter {
     fun spannableToHtml(spannable: Spannable): String {
         if (spannable.isEmpty()) return ""
 
-        val builder = StringBuilder()
-        var i = 0
         val len = spannable.length
+        val allSpans = spannable.getSpans(0, len, Any::class.java)
+
+        // Fast-path for plain text notes: zero allocations during traversal
+        if (allSpans.isEmpty()) {
+            val builder = StringBuilder(len + 16)
+            for (j in 0 until len) {
+                when (val c = spannable[j]) {
+                    '\n' -> builder.append("<br>")
+                    '<' -> builder.append("&lt;")
+                    '>' -> builder.append("&gt;")
+                    '&' -> builder.append("&amp;")
+                    else -> builder.append(c)
+                }
+            }
+            return builder.toString()
+        }
+
+        // Cache typed spans once for the entire string instead of allocating span arrays and filter lists on every character
+        val styleSpans = spannable.getSpans(0, len, StyleSpan::class.java)
+        val underlineSpans = spannable.getSpans(0, len, UnderlineSpan::class.java)
+        val strikeSpans = spannable.getSpans(0, len, StrikethroughSpan::class.java)
+        val fgSpans = spannable.getSpans(0, len, ForegroundColorSpan::class.java)
+        val bgSpans = spannable.getSpans(0, len, BackgroundColorSpan::class.java)
+        val sizeSpans = spannable.getSpans(0, len, RelativeSizeSpan::class.java)
+        val urlSpans = spannable.getSpans(0, len, URLSpan::class.java)
+
+        val builder = StringBuilder(len + 32)
+        var i = 0
 
         while (i < len) {
             val char = spannable[i]
@@ -167,16 +193,15 @@ object HtmlSpannableConverter {
                 continue
             }
 
-            val spans = spannable.getSpans(i, i + 1, Any::class.java)
-            val bold = spans.filterIsInstance<StyleSpan>().find { it.style == Typeface.BOLD }
-            val italic = spans.filterIsInstance<StyleSpan>().find { it.style == Typeface.ITALIC }
-            val underline = spans.find { it is UnderlineSpan }
-            val strike = spans.find { it is StrikethroughSpan }
-            val fg = spans.filterIsInstance<ForegroundColorSpan>().firstOrNull()
-            val bg = spans.filterIsInstance<BackgroundColorSpan>().firstOrNull()
-            val sizeUp = spans.filterIsInstance<RelativeSizeSpan>().filter { it.sizeChange > 1f }.minByOrNull { it.sizeChange }
-            val sizeDown = spans.filterIsInstance<RelativeSizeSpan>().filter { it.sizeChange < 1f }.maxByOrNull { it.sizeChange }
-            val link = spans.filterIsInstance<URLSpan>().firstOrNull()
+            val bold = styleSpans.find { (it.style == Typeface.BOLD || it.style == Typeface.BOLD_ITALIC) && spannable.getSpanStart(it) <= i && spannable.getSpanEnd(it) > i }
+            val italic = styleSpans.find { (it.style == Typeface.ITALIC || it.style == Typeface.BOLD_ITALIC) && spannable.getSpanStart(it) <= i && spannable.getSpanEnd(it) > i }
+            val underline = underlineSpans.find { spannable.getSpanStart(it) <= i && spannable.getSpanEnd(it) > i }
+            val strike = strikeSpans.find { spannable.getSpanStart(it) <= i && spannable.getSpanEnd(it) > i }
+            val fg = fgSpans.find { spannable.getSpanStart(it) <= i && spannable.getSpanEnd(it) > i }
+            val bg = bgSpans.find { spannable.getSpanStart(it) <= i && spannable.getSpanEnd(it) > i }
+            val sizeUp = sizeSpans.filter { it.sizeChange > 1f && spannable.getSpanStart(it) <= i && spannable.getSpanEnd(it) > i }.minByOrNull { it.sizeChange }
+            val sizeDown = sizeSpans.filter { it.sizeChange < 1f && spannable.getSpanStart(it) <= i && spannable.getSpanEnd(it) > i }.maxByOrNull { it.sizeChange }
+            val link = urlSpans.find { spannable.getSpanStart(it) <= i && spannable.getSpanEnd(it) > i }
 
             // A span must only open a tag at its own start offset and close it at its own end
             // offset — checking mere presence at position i (as an earlier version of this code

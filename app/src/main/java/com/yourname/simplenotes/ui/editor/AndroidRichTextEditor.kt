@@ -57,20 +57,18 @@ fun AndroidRichTextEditor(
         factory = { ctx ->
             ScrollAwareEditText(ctx).apply {
                 setPadding(
-                    dpToPx(ctx, 6),
                     dpToPx(ctx, 12),
-                    dpToPx(ctx, 6),
-                    dpToPx(ctx, 12)
+                    dpToPx(ctx, 12),
+                    dpToPx(ctx, 12),
+                    dpToPx(ctx, 96) // Extra bottom padding so last lines are never obscured by floating toolbar
                 )
-                // Multi-line, no autocorrect/suggestions — just like Samsung Notes.
-                // Do NOT add TYPE_TEXT_VARIATION_VISIBLE_PASSWORD here: many IMEs (Gboard
-                // Telex/VNI, Laban Key, etc.) disable diacritic/tone-mark composition when a
-                // field reports itself as a password field, which silently breaks Vietnamese
-                // text input (dấu can't be applied).
+                // Multi-line text input with capitalization.
+                // Do NOT use TYPE_TEXT_VARIATION_VISIBLE_PASSWORD or TYPE_TEXT_FLAG_NO_SUGGESTIONS,
+                // which break word suggestions and Vietnamese diacritics composition on popular IMEs (Gboard, Laban Key).
                 inputType = android.text.InputType.TYPE_CLASS_TEXT or
                         android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or
-                        android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-                imeOptions = EditorInfo.IME_ACTION_NEXT
+                        android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+                imeOptions = EditorInfo.IME_ACTION_NONE or EditorInfo.IME_FLAG_NO_ENTER_ACTION
                 isHorizontalScrollBarEnabled = false
                 isVerticalScrollBarEnabled = false
                 setBackgroundColor(android.graphics.Color.TRANSPARENT)
@@ -79,20 +77,24 @@ fun AndroidRichTextEditor(
                 typeface = Typeface.DEFAULT
 
                 gravity = android.view.Gravity.TOP or android.view.Gravity.START
-                isFocusable = true
-                // isFocusableInTouchMode and showSoftInputOnFocus are managed by ScrollAwareEditText
 
                 // Load initial content
                 val spannable = HtmlSpannableConverter.htmlToSpannable(html)
                 setText(spannable)
                 lastHtml = html
 
-                // Sync EditText → ViewModel on every text change
-                doAfterTextChanged { editable ->
+                // Listen for debounced HTML updates to avoid recomposing the whole screen on every keystroke
+                setOnHtmlSyncListener { newHtml ->
+                    if (!isInternalChange && newHtml != lastHtml) {
+                        lastHtml = newHtml
+                        onHtmlChange(newHtml)
+                    }
+                }
+
+                // Debounce sync on text changes (400ms after user pauses typing)
+                doAfterTextChanged {
                     if (isInternalChange) return@doAfterTextChanged
-                    val newHtml = HtmlSpannableConverter.spannableToHtml(editable ?: return@doAfterTextChanged)
-                    lastHtml = newHtml
-                    onHtmlChange(newHtml)
+                    scheduleHtmlSync(400L)
                 }
 
                 // Expose EditText ref to the parent screen for the toolbar
@@ -104,11 +106,7 @@ fun AndroidRichTextEditor(
             if (html != lastHtml) {
                 isInternalChange = true
                 val spannable = HtmlSpannableConverter.htmlToSpannable(html)
-                // Preserve the full selection range (not just a collapsed cursor) across this
-                // reparse — the toolbar's format buttons trigger this same path (see
-                // EditorToolbar.syncHtml), so collapsing to a point here would deselect
-                // the user's text after every single toggle, forcing them to reselect before
-                // applying a second style (e.g. bold then italic on the same word).
+                // Preserve the full selection range across reparse
                 val selStart = minOf(editText.selectionStart, editText.selectionEnd).coerceIn(0, spannable.length)
                 val selEnd = maxOf(editText.selectionStart, editText.selectionEnd).coerceIn(0, spannable.length)
                 editText.setText(spannable)

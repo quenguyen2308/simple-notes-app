@@ -84,6 +84,7 @@ fun NoteEditorScreen(
     // the keyboard stays visible over the note list until manually dismissed here.
     fun hideKeyboard() {
         val et = editTextRef ?: return
+        (et as? ScrollAwareEditText)?.flushPendingHtml()
         val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
         imm?.hideSoftInputFromWindow(et.windowToken, 0)
     }

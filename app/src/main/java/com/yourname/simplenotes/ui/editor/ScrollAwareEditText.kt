@@ -13,10 +13,13 @@ import com.yourname.simplenotes.util.HtmlSpannableConverter
 import kotlin.math.abs
 
 /**
- * An EditText optimized for smooth note-taking:
- * - Natural tap-to-focus and immediate keyboard summoning on tap without lag or missed touches.
+ * An EditText optimized for smooth note reading and editing:
+ * - Starts with `isFocusableInTouchMode = false` so gestures intended for scrolling/reading
+ *   never accidentally request focus or summon the soft keyboard on ACTION_DOWN.
+ * - Only enables focusable-in-touch-mode on confirmed tap gestures (not scroll gestures).
  * - Swiping to scroll through a note dismisses the soft keyboard and clears focus, allowing
  *   unobstructed full-screen reading.
+ * - Resets `isFocusableInTouchMode = false` whenever focus is lost or scrolling is detected.
  * - Debounces HTML serialization and Compose state updates to keep typing fluid and drop-frame free.
  */
 class ScrollAwareEditText(context: Context) : android.widget.EditText(context) {
@@ -38,8 +41,7 @@ class ScrollAwareEditText(context: Context) : android.widget.EditText(context) {
 
     init {
         isFocusable = true
-        isFocusableInTouchMode = true
-        showSoftInputOnFocus = true
+        isFocusableInTouchMode = false
     }
 
     fun setOnHtmlSyncListener(callback: (String) -> Unit) {
@@ -77,17 +79,12 @@ class ScrollAwareEditText(context: Context) : android.widget.EditText(context) {
                         imm?.hideSoftInputFromWindow(windowToken, 0)
                         clearFocus()
                     }
+                    isFocusableInTouchMode = false
                 }
             }
             MotionEvent.ACTION_UP -> {
                 if (!scrollDetected && !hasFocus()) {
-                    requestFocus()
-                    val offset = getOffsetForPosition(event.x, event.y)
-                    if (offset >= 0 && text != null) {
-                        Selection.setSelection(text, offset.coerceIn(0, text.length))
-                    }
-                    val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-                    imm?.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
+                    isFocusableInTouchMode = true
                 }
             }
         }
@@ -97,6 +94,7 @@ class ScrollAwareEditText(context: Context) : android.widget.EditText(context) {
     override fun onFocusChanged(focused: Boolean, direction: Int, previouslyFocusedRect: Rect?) {
         super.onFocusChanged(focused, direction, previouslyFocusedRect)
         if (!focused) {
+            isFocusableInTouchMode = false
             flushPendingHtml()
         }
     }

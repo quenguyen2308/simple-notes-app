@@ -194,7 +194,7 @@ fun EditorToolbar(
                                 ToolbarActionId.UNDO -> onUndo()
                                 ToolbarActionId.REDO -> onRedo()
                                 ToolbarActionId.HEADING -> { editText?.let { toggleHeading(it) }; syncHtml() }
-                                ToolbarActionId.BULLET_LIST -> editText?.let { toggleBulletList(it) }
+                                ToolbarActionId.BULLET_LIST -> { editText?.let { toggleBulletList(it) }; syncHtml() }
                                 ToolbarActionId.CHECKLIST -> onChecklistToggle()
                                 ToolbarActionId.LINK -> {
                                     if (linkActive) { editText?.let { removeLink(it) }; syncHtml() } else showLinkDialog = true

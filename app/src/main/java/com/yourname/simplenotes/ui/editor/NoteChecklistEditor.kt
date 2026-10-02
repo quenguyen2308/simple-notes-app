@@ -59,7 +59,7 @@ fun NoteChecklistEditor(
                     .padding(horizontal = 16.dp, vertical = 4.dp)
             )
             Text(
-                text = "$completedCount / ${items.size} completed",
+                text = "$completedCount / ${items.size} hoàn thành",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
@@ -77,6 +77,7 @@ fun NoteChecklistEditor(
                     onToggle = { onToggleItem(item.id) },
                     onTextChange = { text -> onUpdateItemText(item.id, text) },
                     onDelete = { onRemoveItem(item.id) },
+                    onNext = onAddItem,
                     transparentColors = transparentColors
                 )
             }
@@ -92,7 +93,7 @@ fun NoteChecklistEditor(
                 contentDescription = null,
                 modifier = Modifier.padding(end = 4.dp)
             )
-            Text("Add item")
+            Text("Thêm mục")
         }
     }
 }
@@ -103,6 +104,7 @@ private fun ChecklistItemRow(
     onToggle: () -> Unit,
     onTextChange: (String) -> Unit,
     onDelete: () -> Unit,
+    onNext: () -> Unit,
     transparentColors: androidx.compose.material3.TextFieldColors
 ) {
     Row(
@@ -116,15 +118,24 @@ private fun ChecklistItemRow(
         TextField(
             value = item.text,
             onValueChange = onTextChange,
-            placeholder = { Text("Item", style = MaterialTheme.typography.bodyMedium) },
+            placeholder = { Text("Nội dung công việc", style = MaterialTheme.typography.bodyMedium) },
+            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                textDecoration = if (item.isCompleted) androidx.compose.ui.text.style.TextDecoration.LineThrough else androidx.compose.ui.text.style.TextDecoration.None,
+                color = if (item.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurface
+            ),
             singleLine = true,
             colors = transparentColors,
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences,
+                imeAction = androidx.compose.ui.text.input.ImeAction.Next
+            ),
+            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onNext = { onNext() }),
             modifier = Modifier.weight(1f)
         )
         IconButton(onClick = onDelete) {
             Icon(
                 Icons.Default.Delete,
-                contentDescription = "Remove item",
+                contentDescription = "Xóa mục",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }

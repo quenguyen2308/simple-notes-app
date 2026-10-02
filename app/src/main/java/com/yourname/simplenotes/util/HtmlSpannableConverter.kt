@@ -174,7 +174,17 @@ object HtmlSpannableConverter {
 
         // Cache typed spans once for the entire string instead of allocating span arrays and filter lists on every character
         val styleSpans = spannable.getSpans(0, len, StyleSpan::class.java)
+        // Filter out IME composing underline spans — these are temporary visual hints from the
+        // soft keyboard (Gboard, Laban Key, Samsung Keyboard) while the user is still composing
+        // a word.  Without this filter the debounced HTML sync serializes them as permanent <u>
+        // tags, causing text to appear underlined when the note is reopened.
         val underlineSpans = spannable.getSpans(0, len, UnderlineSpan::class.java)
+            .filter { span ->
+                val flags = spannable.getSpanFlags(span)
+                // Keep only user-applied underlines: exact UnderlineSpan class with no composing flag
+                (flags and Spannable.SPAN_COMPOSING) == 0 && span.javaClass == UnderlineSpan::class.java
+            }
+            .toTypedArray()
         val strikeSpans = spannable.getSpans(0, len, StrikethroughSpan::class.java)
         val fgSpans = spannable.getSpans(0, len, ForegroundColorSpan::class.java)
         val bgSpans = spannable.getSpans(0, len, BackgroundColorSpan::class.java)

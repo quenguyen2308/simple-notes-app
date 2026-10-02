@@ -16,6 +16,9 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Label
@@ -28,6 +31,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -76,6 +81,7 @@ fun NoteEditorScreen(
     var showCategoryDialog    by remember { mutableStateOf(false) }
     var showLabelsDialog      by remember { mutableStateOf(false) }
     var showNoPasscodeDialog  by remember { mutableStateOf(false) }
+    var showDetailsDialog     by remember { mutableStateOf(false) }
     /** Reference to the EditText inside AndroidRichTextEditor, used by the toolbar. */
     var editTextRef            by remember { mutableStateOf<EditText?>(null) }
 
@@ -102,6 +108,24 @@ fun NoteEditorScreen(
         "$timeStr · $dateLabel"
     }
 
+    // Word and character count statistics for note info
+    val wordCount = remember(viewModel.htmlContent, viewModel.checklistItems, viewModel.isChecklistMode) {
+        val text = if (viewModel.isChecklistMode) {
+            viewModel.checklistItems.joinToString(" ") { it.text }
+        } else {
+            HtmlCompat.fromHtml(viewModel.htmlContent, HtmlCompat.FROM_HTML_MODE_COMPACT).toString()
+        }
+        if (text.isBlank()) 0 else text.trim().split("\\s+".toRegex()).size
+    }
+    val charCount = remember(viewModel.htmlContent, viewModel.checklistItems, viewModel.isChecklistMode) {
+        val text = if (viewModel.isChecklistMode) {
+            viewModel.checklistItems.joinToString("") { it.text }
+        } else {
+            HtmlCompat.fromHtml(viewModel.htmlContent, HtmlCompat.FROM_HTML_MODE_COMPACT).toString()
+        }
+        text.length
+    }
+
     val backDispatcher = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
     DisposableEffect(backDispatcher) {
         val cb = object : OnBackPressedCallback(true) {
@@ -109,6 +133,21 @@ fun NoteEditorScreen(
         }
         backDispatcher?.addCallback(cb)
         onDispose { cb.remove() }
+    }
+
+    // Auto-save on app pause/stop (e.g. user hits Home or switches apps) to prevent data loss
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE) {
+                hideKeyboard()
+                viewModel.save()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
     }
 
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -205,6 +244,12 @@ fun NoteEditorScreen(
                                 leadingIcon = { Icon(Icons.AutoMirrored.Filled.Label, null) },
                                 onClick = { showLabelsDialog = true; showOverflowMenu = false }
                             )
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("Chi tiết ghi chú") },
+                                leadingIcon = { Icon(Icons.Default.Info, null) },
+                                onClick = { showDetailsDialog = true; showOverflowMenu = false }
+                            )
                         }
                     }
                 },
@@ -248,7 +293,7 @@ fun NoteEditorScreen(
                 .padding(padding)
                 .background(editorBg)
         ) {
-            // Title field — sits directly on the note's color, not inside the content card
+            // Title field — sits directly on the note's color, aligned with body margin
             TextField(
                 value = viewModel.title,
                 onValueChange = viewModel::onTitleChange,
@@ -268,9 +313,30 @@ fun NoteEditorScreen(
                     focusedContainerColor = Color.Transparent,
                     unfocusedContainerColor = Color.Transparent,
                     focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent
+                    unfocusedIndicatorColor = Color.Transparent,
+                    cursorColor = onEditorBg,
+                    selectionColors = TextSelectionColors(
+                        handleColor = onEditorBg,
+                        backgroundColor = onEditorBg.copy(alpha = 0.25f)
+                    )
                 ),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.Sentences,
+                    imeAction = ImeAction.Next
+                ),
+                keyboardActions = KeyboardActions(
+                    onNext = {
+                        val et = editTextRef
+                        if (et != null) {
+                            et.isFocusableInTouchMode = true
+                            et.requestFocus()
+                            et.setSelection(et.text?.length ?: 0)
+                            val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+                            imm?.showSoftInput(et, InputMethodManager.SHOW_IMPLICIT)
+                        }
+                    }
+                ),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 0.dp)
             )
 
             // Time + tag chips — also on the colored background, below the title
@@ -282,7 +348,12 @@ fun NoteEditorScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment     = Alignment.CenterVertically
             ) {
-                EditorChip(text = topBarLabel, color = onEditorBgMuted, background = onEditorBg.copy(alpha = 0.1f))
+                EditorChip(
+                    text = topBarLabel,
+                    color = onEditorBgMuted,
+                    background = onEditorBg.copy(alpha = 0.1f),
+                    onClick = { showDetailsDialog = true }
+                )
                 if (viewModel.labels.isEmpty()) {
                     EditorChip(
                         text       = "+ Nhãn",
@@ -302,49 +373,41 @@ fun NoteEditorScreen(
                 }
             }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(4.dp))
 
-            // Content card — same background as the note's identity area so the whole screen
-            // reads as one unified colored surface when a custom note color is active.
-            Surface(
+            // Image section (only render if note has images attached)
+            if (viewModel.imageBlocks.isNotEmpty()) {
+                NoteImageSection(
+                    imageBlocks = viewModel.imageBlocks,
+                    onRemoveImage = viewModel::removeImage,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                )
+            }
+
+            // Content area — occupies all remaining vertical and horizontal space
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .padding(horizontal = 4.dp)
-                    .padding(bottom = 4.dp),
-                color = editorBg,
-                shape = RoundedCornerShape(20.dp)
             ) {
-                Column(Modifier.fillMaxSize()) {
-                    // Image section
-                    NoteImageSection(
-                        imageBlocks = viewModel.imageBlocks,
-                        onRemoveImage = viewModel::removeImage,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
+                if (viewModel.isChecklistMode) {
+                    NoteChecklistEditor(
+                        items = viewModel.checklistItems,
+                        onAddItem = viewModel::addChecklistItem,
+                        onRemoveItem = viewModel::removeChecklistItem,
+                        onToggleItem = viewModel::toggleChecklistItem,
+                        onUpdateItemText = viewModel::updateChecklistItemText,
+                        modifier = Modifier.fillMaxSize()
                     )
-
-                    // Content area
-                    if (viewModel.isChecklistMode) {
-                        NoteChecklistEditor(
-                            items = viewModel.checklistItems,
-                            onAddItem = viewModel::addChecklistItem,
-                            onRemoveItem = viewModel::removeChecklistItem,
-                            onToggleItem = viewModel::toggleChecklistItem,
-                            onUpdateItemText = viewModel::updateChecklistItemText,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        AndroidRichTextEditor(
-                            html = viewModel.htmlContent,
-                            onHtmlChange = viewModel::onHtmlContentChange,
-                            textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 14.sp),
-                            textColor = onEditorBg,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(horizontal = 6.dp, vertical = 12.dp),
-                            onEditTextReady = { editTextRef = it }
-                        )
-                    }
+                } else {
+                    AndroidRichTextEditor(
+                        html = viewModel.htmlContent,
+                        onHtmlChange = viewModel::onHtmlContentChange,
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp),
+                        textColor = onEditorBg,
+                        modifier = Modifier.fillMaxSize(),
+                        onEditTextReady = { editTextRef = it }
+                    )
                 }
             }
         }
@@ -426,6 +489,69 @@ fun NoteEditorScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showNoPasscodeDialog = false }) { Text("Hủy") }
+            }
+        )
+    }
+
+    if (showDetailsDialog) {
+        val createdFormatted = remember(viewModel.createdAtMs) {
+            val ms = if (viewModel.createdAtMs > 0L) viewModel.createdAtMs else System.currentTimeMillis()
+            SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(ms))
+        }
+        AlertDialog(
+            onDismissRequest = { showDetailsDialog = false },
+            title = { Text("Chi tiết ghi chú") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Số từ:", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("$wordCount từ", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Số ký tự:", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("$charCount ký tự", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Ngày tạo:", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(createdFormatted, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Định dạng:", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            if (viewModel.isChecklistMode) "Danh sách công việc" else "Văn bản đa dạng",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    if (viewModel.labels.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Nhãn:", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                viewModel.labels.joinToString(", ") { "#$it" },
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showDetailsDialog = false }) { Text("Đóng") }
             }
         )
     }

@@ -57,17 +57,16 @@ fun AndroidRichTextEditor(
         factory = { ctx ->
             ScrollAwareEditText(ctx).apply {
                 setPadding(
-                    dpToPx(ctx, 12),
-                    dpToPx(ctx, 12),
-                    dpToPx(ctx, 12),
-                    dpToPx(ctx, 96) // Extra bottom padding so last lines are never obscured by floating toolbar
+                    dpToPx(ctx, 16),
+                    dpToPx(ctx, 4),
+                    dpToPx(ctx, 16),
+                    dpToPx(ctx, 16)
                 )
-                // Multi-line text input with capitalization.
-                // Do NOT use TYPE_TEXT_VARIATION_VISIBLE_PASSWORD or TYPE_TEXT_FLAG_NO_SUGGESTIONS,
-                // which break word suggestions and Vietnamese diacritics composition on popular IMEs (Gboard, Laban Key).
+                // Multi-line text input with capitalization and NO_SUGGESTIONS to disable red spellcheck underlines.
                 inputType = android.text.InputType.TYPE_CLASS_TEXT or
                         android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or
-                        android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+                        android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
+                        android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
                 imeOptions = EditorInfo.IME_ACTION_NONE or EditorInfo.IME_FLAG_NO_ENTER_ACTION
                 isHorizontalScrollBarEnabled = false
                 isVerticalScrollBarEnabled = false
@@ -75,6 +74,7 @@ fun AndroidRichTextEditor(
                 setTextColor(textColorInt)
                 textSize = textStyle.fontSize.value
                 typeface = Typeface.DEFAULT
+                setLineSpacing(dpToPx(ctx, 4).toFloat(), 1.15f)
 
                 gravity = android.view.Gravity.TOP or android.view.Gravity.START
 
@@ -184,7 +184,13 @@ fun getFormatState(editText: android.widget.EditText): FormatState {
                     Typeface.BOLD_ITALIC -> { bold = true; italic = true }
                 }
             }
-            is UnderlineSpan -> underline = true
+            is UnderlineSpan -> {
+                // Ignore IME composing underlines — only reflect user-applied underline in the toolbar
+                val flags = text.getSpanFlags(span)
+                if ((flags and Spannable.SPAN_COMPOSING) == 0 && span.javaClass == UnderlineSpan::class.java) {
+                    underline = true
+                }
+            }
             is StrikethroughSpan -> strike = true
             is ForegroundColorSpan -> fgColor = Color(span.foregroundColor)
             is BackgroundColorSpan -> bgColor = Color(span.backgroundColor)

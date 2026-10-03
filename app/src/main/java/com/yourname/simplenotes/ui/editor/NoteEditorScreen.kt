@@ -406,6 +406,7 @@ fun NoteEditorScreen(
                         textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp),
                         textColor = onEditorBg,
                         modifier = Modifier.fillMaxSize(),
+                        undoRedoVersion = viewModel.undoRedoVersion,
                         onEditTextReady = { editTextRef = it }
                     )
                 }

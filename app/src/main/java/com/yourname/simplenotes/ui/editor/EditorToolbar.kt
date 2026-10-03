@@ -85,7 +85,9 @@ fun EditorToolbar(
 ) {
     fun syncHtml() {
         val text = editText?.text as? Spannable ?: return
-        onHtmlChange(HtmlSpannableConverter.spannableToHtml(text))
+        val html = HtmlSpannableConverter.spannableToHtml(text)
+        (editText as? ScrollAwareEditText)?.lastSyncedHtml = html
+        onHtmlChange(html)
     }
 
     val formatState = editText?.let { getFormatState(it) } ?: FormatState()

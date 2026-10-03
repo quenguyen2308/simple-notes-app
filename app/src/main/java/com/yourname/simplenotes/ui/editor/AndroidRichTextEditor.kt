@@ -43,14 +43,15 @@ fun AndroidRichTextEditor(
     textStyle: TextStyle,
     textColor: Color,
     modifier: Modifier = Modifier,
+    undoRedoVersion: Int = 0,
     /** Called once with the EditText instance when the view is created. */
     onEditTextReady: ((EditText) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val textColorInt = textColor.toArgb()
 
-    // Track the current HTML to avoid re-setting when nothing changed
-    var lastHtml by remember { mutableStateOf("") }
+    var lastUndoRedoVersion by remember { mutableIntStateOf(undoRedoVersion) }
+    var isInitialLoadDone by remember { mutableStateOf(false) }
     var isInternalChange by remember { mutableStateOf(false) }
 
     androidx.compose.ui.viewinterop.AndroidView(
@@ -81,12 +82,14 @@ fun AndroidRichTextEditor(
                 // Load initial content
                 val spannable = HtmlSpannableConverter.htmlToSpannable(html)
                 setText(spannable)
-                lastHtml = html
+                lastSyncedHtml = html
+                if (html.isNotEmpty()) {
+                    isInitialLoadDone = true
+                }
 
                 // Listen for debounced HTML updates to avoid recomposing the whole screen on every keystroke
                 setOnHtmlSyncListener { newHtml ->
-                    if (!isInternalChange && newHtml != lastHtml) {
-                        lastHtml = newHtml
+                    if (!isInternalChange) {
                         onHtmlChange(newHtml)
                     }
                 }
@@ -102,8 +105,12 @@ fun AndroidRichTextEditor(
             }
         },
         update = { editText ->
-            // Only update if HTML changed from outside (e.g. loading a new note)
-            if (html != lastHtml) {
+            val scrollAware = editText as? ScrollAwareEditText
+            val isUndoRedo = undoRedoVersion != lastUndoRedoVersion
+            val needsInitialLoad = !isInitialLoadDone && html.isNotEmpty()
+            val externalChange = !editText.hasFocus() && html != scrollAware?.lastSyncedHtml
+
+            if (isUndoRedo || needsInitialLoad || externalChange) {
                 isInternalChange = true
                 val spannable = HtmlSpannableConverter.htmlToSpannable(html)
                 // Preserve the full selection range across reparse
@@ -113,7 +120,9 @@ fun AndroidRichTextEditor(
                 if (spannable.isNotEmpty()) {
                     Selection.setSelection(editText.text, selStart, selEnd)
                 }
-                lastHtml = html
+                scrollAware?.lastSyncedHtml = html
+                lastUndoRedoVersion = undoRedoVersion
+                isInitialLoadDone = true
                 isInternalChange = false
             }
 

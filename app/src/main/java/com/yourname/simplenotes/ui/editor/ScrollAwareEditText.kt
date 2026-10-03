@@ -32,10 +32,14 @@ class ScrollAwareEditText(context: Context) : android.widget.EditText(context) {
     private var syncPending = false
     private var onHtmlSyncCallback: ((String) -> Unit)? = null
 
+    /** The last HTML string synced to ViewModel or loaded externally. */
+    var lastSyncedHtml: String? = null
+
     private val syncRunnable = Runnable {
         syncPending = false
         val spannable = text as? Spannable ?: return@Runnable
         val html = HtmlSpannableConverter.spannableToHtml(spannable)
+        lastSyncedHtml = html
         onHtmlSyncCallback?.invoke(html)
     }
 
@@ -71,7 +75,8 @@ class ScrollAwareEditText(context: Context) : android.widget.EditText(context) {
             MotionEvent.ACTION_MOVE -> {
                 val dx = abs(event.x - downX)
                 val dy = abs(event.y - downY)
-                if (!scrollDetected && (dx > touchSlop || dy > touchSlop)) {
+                // Require significant vertical movement (not horizontal text selection or tiny jitter)
+                if (!scrollDetected && dy > touchSlop * 2.5f && dy > dx * 1.5f) {
                     scrollDetected = true
                     if (hasFocus()) {
                         // Dismiss soft keyboard when user scrolls, expanding readable screen space

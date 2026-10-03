@@ -57,6 +57,10 @@ class NoteEditorViewModel(
     var canRedo by mutableStateOf(false)
         private set
 
+    /** Incremented on every Undo or Redo invocation so the editor can reliably detect external state rollbacks. */
+    var undoRedoVersion by mutableStateOf(0)
+        private set
+
     private fun refreshHistoryFlags() {
         canUndo = undoStack.isNotEmpty()
         canRedo = redoStack.isNotEmpty()
@@ -66,6 +70,7 @@ class NoteEditorViewModel(
         val previous = undoStack.removeLastOrNull() ?: return
         redoStack.addLast(htmlContent)
         htmlContent = previous
+        undoRedoVersion++
         refreshHistoryFlags()
     }
 
@@ -73,6 +78,7 @@ class NoteEditorViewModel(
         val next = redoStack.removeLastOrNull() ?: return
         undoStack.addLast(htmlContent)
         htmlContent = next
+        undoRedoVersion++
         refreshHistoryFlags()
     }
 

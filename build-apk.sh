@@ -27,7 +27,7 @@ if ! java -version >/dev/null 2>&1; then
 fi
 
 # ---- Đọc param build type từ ngoài vào (debug hoặc release) ----
-BUILD_TYPE="${1:-debug}"   # mặc định là debug nếu không truyền param
+BUILD_TYPE="${1:-release}"   # mặc định là release nếu không truyền param
 
 if [[ "$BUILD_TYPE" != "debug" && "$BUILD_TYPE" != "release" ]]; then
     echo "Usage: ./build-apk.sh [debug|release]"

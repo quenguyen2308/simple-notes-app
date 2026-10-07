@@ -60,3 +60,6 @@ scripts
 guide
 .kotlin
 *.apk
+mockups/
+screenshots/
+*.html

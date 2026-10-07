@@ -9,6 +9,13 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.graphics.Brush
+import com.yourname.simplenotes.ui.theme.DeskCoral
+import com.yourname.simplenotes.ui.theme.DeskOakSurface2
+import com.yourname.simplenotes.ui.theme.DeskParchment
+import com.yourname.simplenotes.ui.theme.DeskParchmentMuted
+import com.yourname.simplenotes.ui.theme.DeskWalnutSurface2
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -102,16 +109,70 @@ fun NoteCard(
         }
     }
 
+    val isDark = isSystemInDarkTheme()
+
     val noteBackgroundColor = remember(note.backgroundColor) {
         val argb = note.backgroundColor
         if (argb == 0xFFFFFFFF.toInt() || argb == 0) null else Color(argb)
     }
-    // Pastel note colors are fixed light hues regardless of app theme, so text on a
-    // custom-colored card always uses dark text — MaterialTheme.colorScheme.onSurface
-    // would turn near-white in dark mode and become unreadable on a light pastel card.
-    val onCard        = if (noteBackgroundColor != null) Color(0xFF1B1B1B) else MaterialTheme.colorScheme.onSurface
-    val onCardVariant = if (noteBackgroundColor != null) Color(0xFF1B1B1B).copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant
-    val onCardAccent  = if (noteBackgroundColor != null) onCard else MaterialTheme.colorScheme.primary
+
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val onSurfaceColor = MaterialTheme.colorScheme.onSurface
+    val onSurfaceVariantColor = MaterialTheme.colorScheme.onSurfaceVariant
+
+    // Card accent color used for luminous borders, ambient halos, and tags
+    val accentColor = remember(noteBackgroundColor, isDark, primaryColor) {
+        noteBackgroundColor ?: if (isDark) DeskCoral else primaryColor
+    }
+
+    // Glassmorphism card container color:
+    // In light mode: use custom pastel color if set, or light oak paper surface.
+    // In dark mode: use deep obsidian slate with subtle tint of the note color
+    // to avoid the blinding "flashbang" glare while keeping note color identity.
+    val containerColor = remember(noteBackgroundColor, isDark) {
+        if (isDark) {
+            if (noteBackgroundColor != null) {
+                Color(
+                    red = (0.07f + noteBackgroundColor.red * 0.12f).coerceIn(0f, 1f),
+                    green = (0.09f + noteBackgroundColor.green * 0.12f).coerceIn(0f, 1f),
+                    blue = (0.12f + noteBackgroundColor.blue * 0.14f).coerceIn(0f, 1f),
+                    alpha = 0.94f
+                )
+            } else {
+                DeskWalnutSurface2
+            }
+        } else {
+            noteBackgroundColor ?: DeskOakSurface2
+        }
+    }
+
+    // Text colors:
+    // In dark mode: crisp high-contrast white & muted silver-slate (contrast > 12:1)
+    // In light mode: dark charcoal #1B1B1B for pastel notes, or ink for uncolored notes
+    val onCard = if (isDark) {
+        DeskParchment
+    } else {
+        if (noteBackgroundColor != null) Color(0xFF1B1B1B) else onSurfaceColor
+    }
+
+    val onCardVariant = if (isDark) {
+        DeskParchmentMuted
+    } else {
+        if (noteBackgroundColor != null) Color(0xFF1B1B1B).copy(alpha = 0.7f) else onSurfaceVariantColor
+    }
+
+    val onCardAccent = if (isDark) accentColor else if (noteBackgroundColor != null) onCard else primaryColor
+
+    // Luminous glowing border brush matching Category Bento style
+    val glowingBorderBrush = remember(accentColor, isDark) {
+        Brush.linearGradient(
+            listOf(
+                accentColor.copy(alpha = if (isDark) 0.85f else 0.65f),
+                accentColor.copy(alpha = if (isDark) 0.28f else 0.20f)
+            )
+        )
+    }
+
     val checklistItems = remember(note.contentBlocks) {
         note.contentBlocks.filterIsInstance<ContentBlock.Checklist>()
             .flatMap { it.items }
@@ -133,18 +194,17 @@ fun NoteCard(
             if (tiltDeg != 0f) Modifier.graphicsLayer(rotationZ = tiltDeg) else Modifier
         )
     ) {
-        // ── Hard, flat paper shadow (only when tilted) — a solid offset copy of the card's
-        // shape instead of Material's soft blurred elevation, like a cut-out sticky note. ──
+        // ── Soft Ambient Halo Glow (replaces old harsh offset black shadow block) ──
         if (tilted) {
-            val shadowColor = remember(noteBackgroundColor) {
-                (noteBackgroundColor ?: Color(0xFFBEB6A8)).darken(0.4f)
+            val haloColor = remember(accentColor, isDark) {
+                accentColor.copy(alpha = if (isDark) 0.18f else 0.22f)
             }
             Box(
                 Modifier
                     .matchParentSize()
-                    .offset(x = 3.dp, y = 4.dp)
+                    .offset(y = 2.dp)
                     .clip(RoundedCornerShape(18.dp))
-                    .background(shadowColor)
+                    .background(haloColor)
             )
         }
 
@@ -157,16 +217,23 @@ fun NoteCard(
                 .fillMaxWidth()
                 .heightIn(min = 80.dp)
                 .then(
-                    if (isSelected) Modifier.border(2.dp, onCardAccent, RoundedCornerShape(18.dp))
-                    else Modifier
+                    if (isSelected) {
+                        Modifier.border(2.dp, onCardAccent, RoundedCornerShape(18.dp))
+                    } else {
+                        Modifier.border(
+                            width = 1.2.dp,
+                            brush = glowingBorderBrush,
+                            shape = RoundedCornerShape(18.dp)
+                        )
+                    }
                 )
                 .combinedClickable(onClick = onClick, onLongClick = onLongPress),
             shape     = RoundedCornerShape(18.dp),
             elevation = CardDefaults.cardElevation(
-                defaultElevation = if (tilted) 0.dp else if (isSelected) 6.dp else 3.dp
+                defaultElevation = if (tilted) 0.dp else if (isSelected) 6.dp else 2.dp
             ),
             colors    = CardDefaults.cardColors(
-                containerColor = noteBackgroundColor ?: MaterialTheme.colorScheme.surfaceVariant
+                containerColor = containerColor
             )
         ) {
             Box {
@@ -253,7 +320,14 @@ fun NoteCard(
                     // ── Tag pills ──────────────────────────────────────
                     if (note.labels.isNotEmpty()) {
                         Spacer(Modifier.height(6.dp))
-                        val pillBg = if (noteBackgroundColor != null) noteBackgroundColor.darken(0.28f) else MaterialTheme.colorScheme.primary
+                        val pillBg = if (isDark) {
+                            accentColor.copy(alpha = 0.22f)
+                        } else if (noteBackgroundColor != null) {
+                            noteBackgroundColor.darken(0.28f)
+                        } else {
+                            primaryColor
+                        }
+                        val pillTextColor = if (isDark) accentColor else Color.White
                         Row {
                             note.labels.take(2).forEach { label ->
                                 Box(
@@ -262,7 +336,7 @@ fun NoteCard(
                                         .background(pillBg, RoundedCornerShape(50))
                                         .padding(horizontal = 8.dp, vertical = 3.dp)
                                 ) {
-                                    Text(text = label, fontSize = 11.sp, color = Color.White, maxLines = 1)
+                                    Text(text = label, fontSize = 11.sp, color = pillTextColor, maxLines = 1)
                                 }
                             }
                         }

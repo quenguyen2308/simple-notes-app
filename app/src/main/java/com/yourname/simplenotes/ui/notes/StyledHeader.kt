@@ -2,6 +2,8 @@ package com.yourname.simplenotes.ui.notes
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -77,54 +79,142 @@ fun styledIconTint(style: HeaderStyle, default: Color = MaterialTheme.colorSchem
         HeaderStyle.MEADOW  -> MeadowInk
     }
 
-/** A toolbar icon button, tinted per [style]. No background badge — see [styledIconTint]. */
+/** A toolbar icon button with frosted glass circular backdrop, tinted per [style]. */
 @Composable
 fun StyledIconButton(
     style: HeaderStyle,
     onClick: () -> Unit,
     icon: ImageVector,
     contentDescription: String?,
-    size: Dp = 40.dp,
-    iconSize: Dp = 22.dp
+    size: Dp = 38.dp,
+    iconSize: Dp = 20.dp
 ) {
-    IconButton(onClick = onClick, modifier = Modifier.size(size)) {
+    val isDark = isSystemInDarkTheme()
+    val bg = if (isDark) Color.White.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)
+    val border = if (isDark) Color.White.copy(alpha = 0.12f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+    val iconTint = styledIconTint(style, default = MaterialTheme.colorScheme.onSurface)
+
+    Box(
+        modifier = Modifier
+            .size(size)
+            .shadow(
+                elevation = 2.dp,
+                shape = CircleShape,
+                ambientColor = Color.Black.copy(alpha = 0.06f),
+                spotColor = Color.Black.copy(alpha = 0.08f)
+            )
+            .clip(CircleShape)
+            .background(bg)
+            .border(1.dp, border, CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
         Icon(
-            icon, contentDescription,
-            tint = styledIconTint(style, default = MaterialTheme.colorScheme.onBackground),
+            icon,
+            contentDescription = contentDescription,
+            tint = iconTint,
             modifier = Modifier.size(iconSize)
         )
     }
 }
 
-// ── Default (unchanged "Bàn Làm Việc" look) ─────────────────────────────
+// ── Default (Glassmorphism & Bento Look) ────────────────────────────────
 
 @Composable
 private fun DefaultHeader(title: String, subtitle: String) {
+    val isDark = isSystemInDarkTheme()
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(text = title, fontSize = 30.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
-        Text(text = subtitle, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            text = title,
+            fontSize = 28.sp,
+            fontWeight = FontWeight.ExtraBold,
+            color = MaterialTheme.colorScheme.onBackground,
+            letterSpacing = (-0.5).sp
+        )
+        if (subtitle.isNotEmpty()) {
+            Spacer(Modifier.height(5.dp))
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(
+                        if (isDark) Color.White.copy(alpha = 0.08f)
+                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f)
+                    )
+                    .border(
+                        1.dp,
+                        if (isDark) Color.White.copy(alpha = 0.10f)
+                        else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.40f),
+                        RoundedCornerShape(12.dp)
+                    )
+                    .padding(horizontal = 11.dp, vertical = 3.dp)
+            ) {
+                Text(
+                    text = subtitle,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }
 
 @Composable
 private fun DefaultFab(onClick: () -> Unit) {
-    Box(modifier = Modifier.graphicsLayer(rotationZ = -4f)) {
+    val isDark = isSystemInDarkTheme()
+    val glowColor = if (isDark) Color(0xFF818CF8).copy(alpha = 0.40f) else Color(0xFFEC4899).copy(alpha = 0.35f)
+    val gradient = Brush.linearGradient(
+        listOf(
+            if (isDark) Color(0xFF818CF8) else Color(0xFF6366F1),
+            if (isDark) Color(0xFFF472B6) else Color(0xFFEC4899)
+        )
+    )
+
+    Box(
+        modifier = Modifier.size(58.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        // Soft ambient halo glow underneath
         Box(
             Modifier
                 .size(50.dp)
-                .offset(x = 3.dp, y = 4.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .background(DeskCoralDark)
+                .offset(y = 3.dp)
+                .clip(CircleShape)
+                .background(glowColor)
         )
-        FloatingActionButton(
-            onClick        = onClick,
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor   = MaterialTheme.colorScheme.onPrimary,
-            shape          = RoundedCornerShape(16.dp),
-            elevation      = FloatingActionButtonDefaults.elevation(defaultElevation = 0.dp),
-            modifier       = Modifier.size(50.dp)
+
+        // Glassmorphic Glowing Circle Button
+        Box(
+            modifier = Modifier
+                .size(52.dp)
+                .shadow(
+                    elevation = 8.dp,
+                    shape = CircleShape,
+                    ambientColor = glowColor,
+                    spotColor = glowColor
+                )
+                .clip(CircleShape)
+                .background(gradient)
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center
         ) {
-            Icon(Icons.Default.Edit, "Ghi chú mới", modifier = Modifier.size(22.dp))
+            // Specular gloss highlight ellipse
+            Box(
+                Modifier
+                    .padding(top = 6.dp, start = 10.dp)
+                    .align(Alignment.TopStart)
+                    .size(width = 16.dp, height = 8.dp)
+                    .graphicsLayer(rotationZ = -18f)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.White.copy(alpha = 0.35f))
+            )
+
+            Icon(
+                Icons.Default.Edit,
+                contentDescription = "Ghi chú mới",
+                tint = Color.White,
+                modifier = Modifier.size(22.dp)
+            )
         }
     }
 }

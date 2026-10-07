@@ -5,12 +5,15 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -37,6 +40,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -690,12 +695,24 @@ fun NoteListScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 4.dp)
-                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(28.dp))
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                            .padding(horizontal = 16.dp, vertical = 6.dp)
+                            .shadow(3.dp, RoundedCornerShape(24.dp), ambientColor = Color.Black.copy(alpha = 0.08f))
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
+                            .border(
+                                1.2.dp,
+                                Brush.linearGradient(
+                                    listOf(
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                                    )
+                                ),
+                                RoundedCornerShape(24.dp)
+                            )
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.Search, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(17.dp))
                         Spacer(Modifier.width(8.dp))
                         BasicSearchField(
                             query         = searchQuery,
@@ -1191,7 +1208,7 @@ private fun FolderGrid(
     ) {
         val density = LocalDensity.current
         val cellWidth = (maxWidth - spacing * (columns - 1)) / columns
-        val cellHeight = cellWidth * 3f / 5f
+        val cellHeight = cellWidth * 0.75f
         val cellWidthPx = with(density) { cellWidth.toPx() }
         val cellHeightPx = with(density) { cellHeight.toPx() }
         val spacingPx = with(density) { spacing.toPx() }
@@ -1227,47 +1244,8 @@ private fun FolderGrid(
                             }
                             .zIndex(if (isDragging) 1f else 0f)
                             .pointerInput(id) {
-                                detectDragGesturesAfterLongPress(
-                                    onDragStart = {
-                                        val startIndex = orderedIds.indexOf(id)
-                                        if (startIndex >= 0) {
-                                            draggingId = id
-                                            dragOffsetPx = Offset.Zero
-                                            dragStartOffsetPx = Offset(
-                                                (cellWidthPx + spacingPx) * (startIndex % columns),
-                                                (cellHeightPx + spacingPx) * (startIndex / columns)
-                                            )
-                                        }
-                                    },
-                                    onDragEnd = {
-                                        draggingId = null
-                                        dragOffsetPx = Offset.Zero
-                                        onReorder(orderedIds)
-                                    },
-                                    onDragCancel = {
-                                        draggingId = null
-                                        dragOffsetPx = Offset.Zero
-                                    },
-                                    onDrag = { change, amount ->
-                                        change.consume()
-                                        dragOffsetPx += amount
-                                        val currentIndex = orderedIds.indexOf(id)
-                                        if (currentIndex >= 0) {
-                                            val rawX = dragStartOffsetPx.x + dragOffsetPx.x
-                                            val rawY = dragStartOffsetPx.y + dragOffsetPx.y
-                                            val targetCol = (rawX / (cellWidthPx + spacingPx))
-                                                .roundToInt().coerceIn(0, columns - 1)
-                                            val targetRow = (rawY / (cellHeightPx + spacingPx))
-                                                .roundToInt().coerceIn(0, rows - 1)
-                                            val targetIndex = (targetRow * columns + targetCol)
-                                                .coerceIn(0, orderedIds.lastIndex)
-                                            if (targetIndex != currentIndex) {
-                                                orderedIds = orderedIds.toMutableList().apply {
-                                                    add(targetIndex, removeAt(currentIndex))
-                                                }
-                                            }
-                                        }
-                                    }
+                                detectTapGestures(
+                                    onTap = { onFolderClick(category.id) }
                                 )
                             }
                     ) {
@@ -1294,91 +1272,121 @@ private fun FolderCard(
     onMoreClick: () -> Unit = {},
     isDragging: Boolean = false
 ) {
-    // Same "Bàn Làm Việc" sticky-note treatment as note cards: a small stable per-folder tilt
-    // (derived from the folder's own id, so it doesn't reshuffle on recomposition) plus a flat,
-    // hard-edged paper shadow tinted with the folder's own color instead of a soft blur.
-    val tiltDeg = remember(category.id) {
-        val h = ((category.id.hashCode() % 10_000) + 10_000) % 10_000
-        (h / 10_000f) * 4.4f - 2.2f // roughly -2.2°..+2.2°
-    }
-    val shadowColor = remember(category.colorArgb) { Color(category.colorArgb).darken(0.4f) }
-    val scale by animateFloatAsState(if (isDragging) 1.06f else 1f, label = "folderCardScale")
+    // Concept 2: Glassmorphism Bento Card
+    // Frosted glass look with vibrant glowing category-tinted border,
+    // ambient colored glow shadow, mini folder icon, and clean pill badge.
+    val categoryColor = remember(category.colorArgb) { Color(category.colorArgb) }
+    val scale by animateFloatAsState(if (isDragging) 1.08f else 1f, label = "folderCardScale")
+    val cardShape = RoundedCornerShape(14.dp)
 
-    Box(modifier = Modifier.graphicsLayer(rotationZ = tiltDeg, scaleX = scale, scaleY = scale)) {
-        Box(
-            Modifier
-                .matchParentSize()
-                .offset(x = 3.dp, y = 4.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .background(shadowColor)
+    val surfaceColor = MaterialTheme.colorScheme.surface
+    val borderBrush = remember(categoryColor) {
+        Brush.linearGradient(
+            0.0f to categoryColor.copy(alpha = 0.85f),
+            0.5f to categoryColor.copy(alpha = 0.30f),
+            1.0f to categoryColor.copy(alpha = 0.70f),
+            start = Offset(0f, 0f),
+            end = Offset.Infinite
         )
-        Card(
-            shape      = RoundedCornerShape(16.dp),
-            colors     = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation  = CardDefaults.cardElevation(defaultElevation = if (isDragging) 6.dp else 0.dp),
-            modifier   = Modifier.aspectRatio(5f / 3f).clickable(onClick = onClick)
-        ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            // Color strip: top-right, width=3/5, height=1/5, bottom-left corner rounded
-            val ribbonColor = Color(category.colorArgb)
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val stripW = size.width * 0.6f
-                val stripH = size.height * 0.2f
-                val r = stripH * 0.7f            // radius matches bottom-left roundness
-                val left = size.width - stripW
-                val path = Path().apply {
-                    moveTo(left, 0f)                         // top-left (square)
-                    lineTo(size.width, 0f)                   // top-right
-                    lineTo(size.width, stripH)               // bottom-right
-                    lineTo(left + r, stripH)                 // bottom edge to arc tangent
-                    arcTo(
-                        rect = Rect(left, stripH - 2 * r, left + 2 * r, stripH),
-                        startAngleDegrees = 90f,
-                        sweepAngleDegrees = 90f,
-                        forceMoveTo = false
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer(scaleX = scale, scaleY = scale)
+    ) {
+        // Ambient glow halo
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .offset(y = 2.dp)
+                .clip(cardShape)
+                .background(categoryColor.copy(alpha = if (isDragging) 0.35f else 0.16f))
+        )
+
+        // Glassmorphic Card Container
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .shadow(
+                    elevation = if (isDragging) 8.dp else 3.dp,
+                    shape = cardShape,
+                    ambientColor = categoryColor.copy(alpha = 0.35f),
+                    spotColor = categoryColor.copy(alpha = 0.45f)
+                )
+                .clip(cardShape)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            surfaceColor.copy(alpha = 0.92f),
+                            surfaceColor.copy(alpha = 0.80f)
+                        )
                     )
-                    lineTo(left, 0f)                         // up left edge
-                    close()
-                }
-                drawPath(path, ribbonColor)
-            }
-            // Note count – top left
-            Text(
-                text     = noteCount.toString(),
-                fontSize = 11.sp,
-                color    = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.align(Alignment.TopStart).padding(7.dp)
-            )
-            // Folder name – bottom left
-            Text(
-                text     = category.name,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                color    = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.align(Alignment.BottomStart).padding(7.dp)
-            )
-            // Options (rename/color/delete) — moved off long-press so long-press is free to
-            // start a drag-to-reorder gesture instead.
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(2.dp)
-                    .size(22.dp)
-                    .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.55f))
-                    .clickable(onClick = onMoreClick),
-                contentAlignment = Alignment.Center
+                )
+                .background(categoryColor.copy(alpha = 0.05f))
+                .border(width = 1.2.dp, brush = borderBrush, shape = cardShape)
+                .clickable(onClick = onClick)
+                .padding(horizontal = 7.dp, vertical = 6.dp)
+        ) {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.SpaceBetween
             ) {
-                Icon(
-                    Icons.Default.MoreVert,
-                    contentDescription = "Tùy chọn thư mục",
-                    tint = Color.Black.copy(alpha = 0.65f),
-                    modifier = Modifier.size(14.dp)
+                // Top row: Folder icon + Count pill with options
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(20.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(categoryColor.copy(alpha = 0.16f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.Folder,
+                            contentDescription = null,
+                            tint = categoryColor,
+                            modifier = Modifier.size(13.dp)
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(categoryColor.copy(alpha = 0.14f))
+                            .clickable(onClick = onMoreClick)
+                            .padding(horizontal = 4.dp, vertical = 1.5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(1.dp)
+                    ) {
+                        Text(
+                            text = noteCount.toString(),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Icon(
+                            Icons.Default.MoreVert,
+                            contentDescription = "Tùy chọn thư mục",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                            modifier = Modifier.size(11.dp)
+                        )
+                    }
+                }
+
+                // Bottom row: Category name
+                Text(
+                    text = category.name,
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
-        }
         }
     }
 }
@@ -1448,12 +1456,17 @@ private fun NotesSortBar(
         Spacer(Modifier.width(8.dp))
 
         // Grid / List toggle
-        Icon(
-            if (viewType == NoteViewType.GRID) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView,
-            contentDescription = if (viewType == NoteViewType.GRID) "List view" else "Grid view",
-            modifier = Modifier.size(16.dp).clickable { onToggleView() },
-            tint     = tint
-        )
+        IconButton(
+            onClick  = onToggleView,
+            modifier = Modifier.size(28.dp)
+        ) {
+            Icon(
+                if (viewType == NoteViewType.GRID) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView,
+                contentDescription = if (viewType == NoteViewType.GRID) "List view" else "Grid view",
+                modifier = Modifier.size(18.dp),
+                tint     = tint
+            )
+        }
     }
 }
 
@@ -1571,7 +1584,7 @@ private fun DrawerSectionLabel(text: String) {
     )
 }
 
-/** Pill-shaped nav row for the drawer (mirrors the left-nav reference: 56dp, fully rounded, selected = primaryContainer). */
+/** Pill-shaped nav row for the drawer with frosted acrylic styling. */
 @Composable
 private fun DrawerNavItem(
     icon: ImageVector,
@@ -1580,22 +1593,32 @@ private fun DrawerNavItem(
     count: Int? = null,
     onClick: () -> Unit
 ) {
-    val bg = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
-    val content = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+    val isDark = isSystemInDarkTheme()
+    val bg = if (selected) {
+        if (isDark) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+        else MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+    } else Color.Transparent
+    val border = if (selected) {
+        if (isDark) MaterialTheme.colorScheme.primary.copy(alpha = 0.40f)
+        else MaterialTheme.colorScheme.primary.copy(alpha = 0.30f)
+    } else Color.Transparent
+    val content = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .height(56.dp)
-            .clip(RoundedCornerShape(28.dp))
+            .height(52.dp)
+            .clip(RoundedCornerShape(18.dp))
             .background(bg)
+            .then(if (selected) Modifier.border(1.dp, border, RoundedCornerShape(18.dp)) else Modifier)
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp)
     ) {
-        Icon(icon, null, tint = content, modifier = Modifier.size(24.dp))
+        Icon(icon, null, tint = content, modifier = Modifier.size(22.dp))
         Spacer(Modifier.width(16.dp))
         Text(
-            label, fontSize = 16.sp,
+            label, fontSize = 15.sp,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
             color = content, modifier = Modifier.weight(1f)
         )
@@ -1620,22 +1643,31 @@ private fun DrawerCount(count: Int) {
 /** Colored-dot row for a label/tag filter shortcut in the drawer. */
 @Composable
 private fun DrawerTagItem(color: Color, label: String, selected: Boolean, onClick: () -> Unit) {
+    val isDark = isSystemInDarkTheme()
+    val bg = if (selected) {
+        if (isDark) color.copy(alpha = 0.18f)
+        else color.copy(alpha = 0.12f)
+    } else Color.Transparent
+    val border = if (selected) color.copy(alpha = 0.40f) else Color.Transparent
+    val content = if (selected) color else MaterialTheme.colorScheme.onSurface
+
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
             .height(44.dp)
-            .clip(RoundedCornerShape(22.dp))
-            .background(if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+            .clip(RoundedCornerShape(16.dp))
+            .background(bg)
+            .then(if (selected) Modifier.border(1.dp, border, RoundedCornerShape(16.dp)) else Modifier)
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp)
     ) {
-        Box(Modifier.size(12.dp).clip(CircleShape).background(color))
+        Box(Modifier.size(10.dp).clip(CircleShape).background(color))
         Spacer(Modifier.width(16.dp))
         Text(
-            label, fontSize = 15.sp,
+            label, fontSize = 14.sp,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-            color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+            color = content
         )
     }
 }
@@ -1650,19 +1682,28 @@ private fun FolderDrawerItem(
 ) {
     val isSelected = selectedFolderId == node.category.id
     val count = categoryCounts[node.category.id] ?: 0
-    Surface(
-        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-        shape = RoundedCornerShape(50),
+    val categoryColor = Color(node.category.colorArgb)
+    val isDark = isSystemInDarkTheme()
+    val bg = if (isSelected) {
+        if (isDark) categoryColor.copy(alpha = 0.18f)
+        else categoryColor.copy(alpha = 0.12f)
+    } else Color.Transparent
+    val border = if (isSelected) categoryColor.copy(alpha = 0.40f) else Color.Transparent
+
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 1.dp)
+            .padding(vertical = 2.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(bg)
+            .then(if (isSelected) Modifier.border(1.dp, border, RoundedCornerShape(16.dp)) else Modifier)
             .clickable { onFolderClick(node.category.id) }
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(
-                    start = 16.dp + (depth * 16).dp,
+                    start = 16.dp + (depth * 14).dp,
                     end = 16.dp,
                     top = 10.dp,
                     bottom = 10.dp
@@ -1671,17 +1712,18 @@ private fun FolderDrawerItem(
         ) {
             Icon(
                 Icons.Default.Folder, null,
-                tint     = Color(node.category.colorArgb),
-                modifier = Modifier.size(20.dp)
+                tint     = categoryColor,
+                modifier = Modifier.size(18.dp)
             )
-            Spacer(Modifier.width(16.dp))
+            Spacer(Modifier.width(14.dp))
             Text(
                 node.category.name,
                 fontSize = 14.sp,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                 modifier = Modifier.weight(1f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
+                color = if (isSelected) (if (isDark) categoryColor else MaterialTheme.colorScheme.primary)
                         else MaterialTheme.colorScheme.onSurface
             )
             DrawerCount(count)

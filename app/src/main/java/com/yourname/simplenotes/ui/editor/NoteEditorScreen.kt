@@ -154,13 +154,40 @@ fun NoteEditorScreen(
         uri?.let { viewModel.addImage(it.toString()) }
     }
 
-    // Pastel note colors are fixed light hues regardless of app theme, so a custom-colored
-    // note always uses a light background + dark text — theme surface/onSurface colors would
-    // turn dark-background/light-text in dark mode and become unreadable against the pastel.
+    // Pastel note colors are fixed light hues regardless of app theme.
+    // In dark mode: use deep obsidian slate tinted with note color to eliminate "flashbang" glare
+    // while keeping note color identity; text is high-contrast crisp white.
+    // In light mode: use custom pastel background + dark charcoal #1B1B1B text.
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     val hasCustomColor = viewModel.backgroundColor != 0xFFFFFFFF.toInt() && viewModel.backgroundColor != 0
-    val editorBg        = if (hasCustomColor) Color(viewModel.backgroundColor) else MaterialTheme.colorScheme.surface
-    val onEditorBg       = if (hasCustomColor) Color(0xFF1B1B1B) else MaterialTheme.colorScheme.onSurface
-    val onEditorBgMuted  = if (hasCustomColor) Color(0xFF1B1B1B).copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurfaceVariant
+    val customColor = if (hasCustomColor) Color(viewModel.backgroundColor) else null
+
+    val editorBg = if (isDark) {
+        if (customColor != null) {
+            Color(
+                red = (0.07f + customColor.red * 0.12f).coerceIn(0f, 1f),
+                green = (0.09f + customColor.green * 0.12f).coerceIn(0f, 1f),
+                blue = (0.12f + customColor.blue * 0.14f).coerceIn(0f, 1f),
+                alpha = 1.0f
+            )
+        } else {
+            MaterialTheme.colorScheme.surface
+        }
+    } else {
+        customColor ?: MaterialTheme.colorScheme.surface
+    }
+
+    val onEditorBg = if (isDark) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        if (hasCustomColor) Color(0xFF1B1B1B) else MaterialTheme.colorScheme.onSurface
+    }
+
+    val onEditorBgMuted = if (isDark) {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    } else {
+        if (hasCustomColor) Color(0xFF1B1B1B).copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurfaceVariant
+    }
 
     Scaffold(
         containerColor = editorBg,

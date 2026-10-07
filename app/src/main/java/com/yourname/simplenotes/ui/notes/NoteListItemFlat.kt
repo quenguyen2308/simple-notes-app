@@ -4,8 +4,11 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.Icon
@@ -45,10 +48,22 @@ fun NoteListItemFlat(
     val colorTs      = MaterialTheme.colorScheme.outline
     val colorBorder  = MaterialTheme.colorScheme.outlineVariant
 
-    val bg = when {
-        isSelected    -> bgSelected
-        note.isPinned -> bgPinned
-        else          -> bgNormal
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val noteColor = remember(note.backgroundColor) {
+        val argb = note.backgroundColor
+        if (argb == 0xFFFFFFFF.toInt() || argb == 0) null else Color(argb)
+    }
+
+    val cardBg = when {
+        isSelected -> if (isDark) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+        note.isPinned -> if (isDark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
+        else -> if (isDark) MaterialTheme.colorScheme.surface.copy(alpha = 0.80f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)
+    }
+
+    val borderColor = when {
+        isSelected -> MaterialTheme.colorScheme.primary
+        noteColor != null -> noteColor.copy(alpha = if (isDark) 0.5f else 0.4f)
+        else -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isDark) 0.35f else 0.45f)
     }
 
     val timestamp = remember(note.contentUpdatedAt) {
@@ -64,15 +79,29 @@ fun NoteListItemFlat(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .background(bg)
+            .padding(horizontal = 12.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(cardBg)
+            .border(1.dp, borderColor, RoundedCornerShape(14.dp))
             .combinedClickable(onClick = onClick, onLongClick = onLongPress)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
+                .padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Accent left dot or indicator
+            if (noteColor != null) {
+                Box(
+                    modifier = Modifier
+                        .size(width = 4.dp, height = 24.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(noteColor)
+                )
+                Spacer(Modifier.width(10.dp))
+            }
+
             // Selection checkmark
             if (isSelected) {
                 Icon(
@@ -91,18 +120,14 @@ fun NoteListItemFlat(
                     }
                     Text(
                         text = note.title.ifEmpty { "Ghi chú" },
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
+                        fontSize = 15.5.sp,
+                        fontWeight = FontWeight.SemiBold,
                         color = colorTitle,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
                 Spacer(Modifier.height(2.dp))
-                // Preview or locked label — real line breaks shown (matches grid card), just
-                // capped to fewer lines since a list row is more compact than a grid card.
-                // Rendered with the same bold/italic/underline/strikethrough/color spans as the
-                // editor, instead of note.content's plain-text-only extract.
                 if (note.isLocked) {
                     Text(
                         text = "[Đã khóa]",
@@ -128,17 +153,8 @@ fun NoteListItemFlat(
                     Spacer(Modifier.height(3.dp))
                 }
                 // Timestamp
-                Text(text = timestamp, fontSize = 12.sp, color = colorTs)
+                Text(text = timestamp, fontSize = 11.5.sp, color = colorTs)
             }
         }
-
-        // Bottom divider line (0.5dp per spec)
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .fillMaxWidth()
-                .height(0.5.dp)
-                .background(colorBorder)
-        )
     }
 }

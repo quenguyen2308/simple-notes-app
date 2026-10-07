@@ -3,26 +3,48 @@ package com.yourname.simplenotes.ui.theme
 import androidx.compose.ui.graphics.Color
 import com.yourname.simplenotes.ui.editor.NOTE_COLORS
 
-// "Bàn Làm Việc" (desk) palette — a corkboard-of-colored-notes identity, dark walnut desk at
-// night, light oak/kraft desk by day. Same accent personality (coral/amber/sage) in both.
-val DeskWalnut         = Color(0xFF2B2420) // dark background — the desk at night
-val DeskWalnutSurface  = Color(0xFF3A3129) // dark elevated surface (search bar, sheets)
-val DeskWalnutSurface2 = Color(0xFF453B31) // dark surfaceVariant (uncolored note cards)
-val DeskParchment      = Color(0xFFF3ECDF) // text on dark
-val DeskParchmentMuted = Color(0xFFC9BBA4) // muted text on dark
+// ── Glassmorphism & Bento Design System Palette ─────────────────────────
+// Clean porcelain & frosted white for light mode; deep obsidian slate for dark mode.
+val GlassPorcelainBg       = Color(0xFFF8FAFC) // light background — clean porcelain slate
+val GlassPorcelainSurface  = Color(0xFFFFFFFF) // light surface — frosted acrylic white
+val GlassPorcelainSurface2 = Color(0xFFF1F5F9) // light surface variant / elevated
+val GlassSlateInk          = Color(0xFF0F172A) // text on light — slate 900
+val GlassSlateMuted        = Color(0xFF64748B) // muted text on light — slate 500
+val GlassBorderLight       = Color(0xFFE2E8F0) // clean glass border on light
 
-val DeskOak       = Color(0xFFF1E7D6) // light background — the desk by day
-val DeskOakSurface  = Color(0xFFFFFDF8) // light elevated surface
-val DeskOakSurface2 = Color(0xFFEDE1CB) // light surfaceVariant (uncolored note cards)
-val DeskInk       = Color(0xFF2B2420) // text on light (mirrors the dark bg — same identity)
-val DeskInkMuted  = Color(0xFF7A6F5E) // muted text on light
+val GlassObsidianBg        = Color(0xFF0E121A) // dark background — midnight obsidian slate
+val GlassObsidianSurface   = Color(0xFF161B26) // dark surface — deep frosted acrylic
+val GlassObsidianSurface2  = Color(0xFF1E2638) // dark surface variant / elevated
+val GlassWhiteParchment    = Color(0xFFF8FAFC) // text on dark — crisp parchment
+val GlassWhiteMuted        = Color(0xFF94A3B8) // muted text on dark — slate 400
+val GlassBorderDark        = Color(0xFF242E42) // clean glass border on dark
 
-val DeskCoral      = Color(0xFFFF6F59) // primary accent — FAB, active states
-val DeskCoralDark  = Color(0xFFC2543F) // pressed/shadow tone for the coral accent
-val DeskAmber      = Color(0xFFE8A93A) // secondary accent — pinned/highlight
-val DeskSage       = Color(0xFF4FA47C) // tertiary accent
-val DeskOnAccent   = Color(0xFF2A1B14) // dark ink used as text/icon color on top of the accents
-                                        // above — they're all light/mid hues in both themes.
+// Radiant modern accents (Indigo, Pink, Emerald, Amber, Violet)
+val GlassIndigo            = Color(0xFF6366F1) // primary accent light
+val GlassIndigoLight       = Color(0xFFEEF2FF) // soft indigo container
+val GlassElectricIndigo    = Color(0xFF818CF8) // primary accent dark
+val GlassPink              = Color(0xFFEC4899) // vibrant gradient accent
+val GlassEmerald           = Color(0xFF10B981) // success / mint accent
+val GlassAmber             = Color(0xFFF59E0B) // warning / pinned accent
+
+// Backward-compatible aliases for existing references
+val DeskWalnut         = GlassObsidianBg
+val DeskWalnutSurface  = GlassObsidianSurface
+val DeskWalnutSurface2 = GlassObsidianSurface2
+val DeskParchment      = GlassWhiteParchment
+val DeskParchmentMuted = GlassWhiteMuted
+
+val DeskOak       = GlassPorcelainBg
+val DeskOakSurface  = GlassPorcelainSurface
+val DeskOakSurface2 = GlassPorcelainSurface2
+val DeskInk       = GlassSlateInk
+val DeskInkMuted  = GlassSlateMuted
+
+val DeskCoral      = GlassIndigo
+val DeskCoralDark  = Color(0xFF4F46E5)
+val DeskAmber      = GlassAmber
+val DeskSage       = GlassEmerald
+val DeskOnAccent   = Color.White
 
 /** Shared color options for folders — used by both the create and edit folder dialogs.
  *  Includes the saturated folder tones plus the note background palette ([NOTE_COLORS]),

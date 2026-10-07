@@ -76,6 +76,20 @@ import com.yourname.simplenotes.ui.settings.SettingsPrefs
 import com.yourname.simplenotes.ui.settings.SettingsScreen
 import com.yourname.simplenotes.ui.theme.FOLDER_COLOR_PALETTE
 import com.yourname.simplenotes.ui.theme.HeaderStyle
+import com.yourname.simplenotes.ui.theme.SakuraBlushBg
+import com.yourname.simplenotes.ui.theme.SakuraBlushBgDark
+import com.yourname.simplenotes.ui.theme.SakuraBorderSoft
+import com.yourname.simplenotes.ui.theme.SakuraBorderSoftDark
+import com.yourname.simplenotes.ui.theme.SakuraPink
+import com.yourname.simplenotes.ui.theme.SakuraPinkContainer
+import com.yourname.simplenotes.ui.theme.SakuraPinkContainerDark
+import com.yourname.simplenotes.ui.theme.SakuraPinkLight
+import com.yourname.simplenotes.ui.theme.SakuraSurface
+import com.yourname.simplenotes.ui.theme.SakuraSurfaceDark
+import com.yourname.simplenotes.ui.theme.SakuraTextPrimary
+import com.yourname.simplenotes.ui.theme.SakuraTextPrimaryDark
+import com.yourname.simplenotes.ui.theme.SakuraTextSecondary
+import com.yourname.simplenotes.ui.theme.SakuraTextSecondaryDark
 import com.yourname.simplenotes.util.BiometricHelper
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -282,6 +296,7 @@ fun NoteListScreen(
     var colorPickerNote  by remember { mutableStateOf<Note?>(null) }
     var folderToDelete   by remember { mutableStateOf<Category?>(null) }
     var folderToEdit     by remember { mutableStateOf<Category?>(null) }
+    var showSortSheet    by remember { mutableStateOf(false) }
 
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -315,7 +330,7 @@ fun NoteListScreen(
     val currentFolder    = remember(viewingFolderId, categories) { categories.find { it.id == viewingFolderId } }
 
     val currentNotes = remember(notes, viewingFolderId, searchQuery, sortField, sortAscending) {
-        val base = if (viewingFolderId == null) notes.filter { it.folderId == null }
+        val base = if (viewingFolderId == null) notes
                    else notes.filter { it.folderId == viewingFolderId }
         val filtered = if (searchQuery.isEmpty()) base
                        else base.filter {
@@ -560,7 +575,7 @@ fun NoteListScreen(
         }
 
         Scaffold(
-            containerColor = MaterialTheme.colorScheme.background,
+            containerColor = if (isSystemInDarkTheme()) SakuraBlushBgDark else SakuraBlushBg,
             bottomBar = {
                 AnimatedContent(targetState = isSelectionMode, label = "bottom_bar") { inSelect ->
                     if (inSelect) {
@@ -569,23 +584,18 @@ fun NoteListScreen(
                             selectedNotes.all { id -> notes.find { it.id == id }?.isLocked == true }
                         }
                         val allNoteIds = remember(currentNotes) { currentNotes.map { it.id }.toSet() }
-                        SelectionActionBar(
-                            headerStyle      = headerStyle,
-                            selectedCount    = selectedNotes.size,
-                            allSelected       = selectedNotes.isNotEmpty() && selectedNotes == allNoteIds,
-                            allSelectedLocked = allSelectedLocked,
-                            onSelectAll      = {
+                        PhotoEventsSelectionBar(
+                            selectedCount = selectedNotes.size,
+                            onCancel      = { exitSelectionMode() },
+                            onSelectAll   = {
                                 if (selectedNotes == allNoteIds) {
-                                    // Already all selected — tapping again clears the selection.
                                     exitSelectionMode()
                                 } else {
                                     selectedNotes = allNoteIds
                                 }
                             },
-                            onMoveToFolder   = { moveTargetNoteIds = selectedNotes.toList() },
-                            onDeselect       = { exitSelectionMode() },
-                            onDelete         = { showBulkDeleteConfirm = true },
-                            onLock = {
+                            onMove   = { moveTargetNoteIds = selectedNotes.toList() },
+                            onLock   = {
                                 if (!BiometricHelper.isDeviceSecure(context)) {
                                     showNoPasscodeDialog = true
                                 } else {
@@ -599,14 +609,15 @@ fun NoteListScreen(
                                         onError = {}
                                     )
                                 }
-                            }
+                            },
+                            onDelete = { showBulkDeleteConfirm = true }
                         )
                     }
                 }
             },
             floatingActionButton = {
                 if (!isSelectionMode) {
-                    StyledFab(style = headerStyle, onClick = { onNewNote(viewingFolderId) })
+                    PhotoEventsFab(onClick = { onNewNote(viewingFolderId) })
                 }
             }
         ) { padding ->
@@ -614,105 +625,48 @@ fun NoteListScreen(
                 Modifier
                     .padding(padding)
                     .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.background)
+                    .background(if (isSystemInDarkTheme()) SakuraBlushBgDark else SakuraBlushBg)
             ) {
-                // ── Large centered header ────────────────────────────
-                Box(
-                    modifier          = Modifier.fillMaxWidth().padding(top = 28.dp, bottom = 4.dp),
-                    contentAlignment  = Alignment.Center
-                ) {
-                    val title = if (viewingFolderId == null) "Folders" else currentFolder?.name ?: ""
-                    val subtitle = if (viewingFolderId == null)
-                        "${categories.size} folders, $totalNotes notes"
-                    else
-                        "${currentNotes.size} notes"
-                    StyledNoteListHeader(style = headerStyle, title = title, subtitle = subtitle)
+                // ── Top Header: PhotoEvents Header (Sakura Brand Box + Drawer Menu + Search + Sort Pill) ──
+                val currentSortLabel = when (sortField) {
+                    SortField.DATE_MODIFIED -> if (!sortAscending) "Mới nhất" else "Cũ nhất"
+                    SortField.DATE_CREATED  -> if (!sortAscending) "Mới tạo" else "Tạo cũ"
+                    SortField.TITLE         -> if (sortAscending) "A → Z" else "Z → A"
                 }
 
-                // ── Toolbar row ─────────────────────────────────────
-                Row(
-                    modifier          = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    StyledIconButton(
-                        style = headerStyle,
-                        onClick = { scope.launch { drawerState.open() } },
-                        icon = Icons.Default.Menu,
-                        contentDescription = "Menu"
-                    )
-                    Spacer(Modifier.weight(1f))
-                    StyledIconButton(
-                        style = headerStyle,
-                        onClick = {
-                            if (showSearchBar) {
-                                showSearchBar = false
-                                searchQuery = ""
-                            } else {
-                                showSearchBar = true
-                            }
-                        },
-                        icon = Icons.Default.Search,
-                        contentDescription = "Tìm kiếm"
-                    )
-                    Box {
-                        StyledIconButton(
-                            style = headerStyle,
-                            onClick = { showMoreMenu = true },
-                            icon = Icons.Default.MoreVert,
-                            contentDescription = "More"
-                        )
-                        DropdownMenu(
-                            expanded        = showMoreMenu,
-                            onDismissRequest = { showMoreMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text    = { Text("Edit") },
-                                onClick = { isSelectionMode = true; showMoreMenu = false }
-                            )
-                            DropdownMenuItem(
-                                text    = { Text("Create folder") },
-                                onClick = { showCreateFolderDialog = true; showMoreMenu = false }
-                            )
-                            DropdownMenuItem(
-                                text    = { Text("Unpin favourites from top") },
-                                onClick = {
-                                    viewModel.unpinNotes(currentNotes.filter { it.isPinned }.map { it.id })
-                                    showMoreMenu = false
-                                }
-                            )
-                        }
-                    }
-                }
+                PhotoEventsHeader(
+                    sortLabel = currentSortLabel,
+                    onMenuClick = { scope.launch { drawerState.open() } },
+                    onSearchClick = {
+                        showSearchBar = !showSearchBar
+                        if (!showSearchBar) searchQuery = ""
+                    },
+                    onSortClick = { showSortSheet = true }
+                )
 
-                // ── Search bar — collapsed to an icon until tapped, no avatar (Settings
-                // lives in the drawer) ────────────────────────────────────────────
+                // ── Search bar (toggleable) ──
                 if (showSearchBar) {
                     val keyboardController = LocalSoftwareKeyboardController.current
                     LaunchedEffect(Unit) {
                         searchFocusRequester.requestFocus()
                         keyboardController?.show()
                     }
+                    val isDark = isSystemInDarkTheme()
+                    val searchBg = if (isDark) SakuraSurfaceDark else SakuraSurface
+                    val searchBorder = if (isDark) SakuraBorderSoftDark else SakuraBorderSoft
+
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 6.dp)
                             .shadow(3.dp, RoundedCornerShape(24.dp), ambientColor = Color.Black.copy(alpha = 0.08f))
                             .clip(RoundedCornerShape(24.dp))
-                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
-                            .border(
-                                1.2.dp,
-                                Brush.linearGradient(
-                                    listOf(
-                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-                                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-                                    )
-                                ),
-                                RoundedCornerShape(24.dp)
-                            )
+                            .background(searchBg)
+                            .border(1.2.dp, searchBorder, RoundedCornerShape(24.dp))
                             .padding(horizontal = 14.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.Search, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(17.dp))
+                        Icon(Icons.Default.Search, null, tint = SakuraPink, modifier = Modifier.size(17.dp))
                         Spacer(Modifier.width(8.dp))
                         BasicSearchField(
                             query         = searchQuery,
@@ -722,163 +676,34 @@ fun NoteListScreen(
                         if (searchQuery.isNotEmpty()) {
                             Icon(
                                 Icons.Default.Close, null,
-                                tint     = MaterialTheme.colorScheme.onSurfaceVariant,
+                                tint     = if (isDark) SakuraTextSecondaryDark else SakuraTextSecondary,
                                 modifier = Modifier.size(16.dp).clickable { searchQuery = "" }
                             )
                         }
                     }
                 }
 
-                // ── Breadcrumb (folder screen only) ─────────────────
-                if (viewingFolderId != null) {
-                    Row(
-                        modifier          = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            Icons.Default.FolderOpen, null,
-                            modifier = Modifier.size(18.dp).clickable { viewingFolderId = null },
-                            tint     = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(">", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
-                        Spacer(Modifier.width(4.dp))
-                        Text(
-                            text       = currentFolder?.name ?: "",
-                            fontWeight = FontWeight.Bold,
-                            fontSize   = 14.sp,
-                            color      = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                }
+                // ── Pinned Category Carousel Strip (PhotoEvents horizontal strip) ──
+                PhotoEventsCategoryStrip(
+                    categories          = categories,
+                    categoryCounts      = categoryCounts,
+                    totalNotesCount     = notes.size,
+                    selectedCategoryId  = viewingFolderId,
+                    onSelectCategory    = { viewingFolderId = it },
+                    onAddCategoryClick  = { showCreateFolderDialog = true },
+                    onEditCategoryClick = { folderToEdit = it },
+                    onReorderCategories = { ids -> viewModel.reorderCategories(ids) }
+                )
 
-                // ── Pull-to-refresh wrapper ──────────────────────────
+                // ── Notes list / grid within Pull-to-refresh wrapper ──
                 Box(Modifier.fillMaxSize().nestedScroll(pullRefreshState.nestedScrollConnection).clipToBounds()) {
-
-                // ── HOME: folder grid + sort bar + unfiled notes ──────
-                if (viewingFolderId == null) {
-                    LazyColumn(
-                        modifier       = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = 80.dp)
-                    ) {
-                        if (categories.isNotEmpty()) {
-                            item {
-                                FolderGrid(
-                                    categories     = categories,
-                                    categoryCounts = categoryCounts,
-                                    onFolderClick  = { id -> viewingFolderId = id },
-                                    onFolderMoreClick = { id ->
-                                        folderToEdit = categories.find { it.id == id }
-                                    },
-                                    onReorder = { ids -> viewModel.reorderCategories(ids) }
-                                )
-                            }
-                        }
-
-                        item {
-                            NotesSortBar(
-                                sortField     = sortField,
-                                sortAscending = sortAscending,
-                                viewType      = viewType,
-                                headerStyle   = headerStyle,
-                                onSortField   = { sortField = it },
-                                onToggleDir   = { sortAscending = !sortAscending },
-                                onToggleView  = {
-                                    viewModel.setViewType(
-                                        if (viewType == NoteViewType.GRID) NoteViewType.LIST else NoteViewType.GRID
-                                    )
-                                }
-                            )
-                        }
-
-                        if (currentNotes.isEmpty()) {
-                            item {
-                                Box(
-                                    modifier       = Modifier.fillMaxWidth().padding(32.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        "Chưa có ghi chú\nNhấn + để tạo mới",
-                                        color       = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        textAlign   = TextAlign.Center
-                                    )
-                                }
-                            }
-                        } else if (viewType == NoteViewType.GRID) {
-                            item {
-                                MasonryNoteGrid(
-                                    notes         = currentNotes,
-                                    selectedNotes = selectedNotes,
-                                    onNoteClick   = { note ->
-                                        if (isSelectionMode) toggleSelection(note.id)
-                                        else handleNoteClick(note.id)
-                                    },
-                                    onNoteLongPress = { note ->
-                                        if (isSelectionMode) toggleSelection(note.id)
-                                        else {
-                                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS, HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING)
-                                            enterSelectionMode(note.id)
-                                        }
-                                    },
-                                    onShowActions = { note -> bottomSheetNote = note },
-                                    headerStyle   = headerStyle
-                                )
-                            }
-                        } else {
-                            itemsIndexed(currentNotes, key = { _, it -> it.id }) { index, note ->
-                                TimelineNoteRow(
-                                    note       = note,
-                                    isSelected = selectedNotes.contains(note.id),
-                                    isFirst    = index == 0,
-                                    isLast     = index == currentNotes.lastIndex,
-                                    onClick  = {
-                                        if (isSelectionMode) toggleSelection(note.id)
-                                        else handleNoteClick(note.id)
-                                    },
-                                    onLongPress = {
-                                        if (isSelectionMode) toggleSelection(note.id)
-                                        else {
-                                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS, HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING)
-                                            enterSelectionMode(note.id)
-                                        }
-                                    },
-                                    onShowActions = { bottomSheetNote = note },
-                                    headerStyle = headerStyle,
-                                    modifier = Modifier.padding(horizontal = 8.dp)
-                                )
-                            }
-                        }
-                    }
-
-                // ── FOLDER: sort bar + notes grid ────────────────────
-                } else {
-                    Column(Modifier.fillMaxSize()) {
-                    NotesSortBar(
-                        sortField     = sortField,
-                        sortAscending = sortAscending,
-                        viewType      = viewType,
-                        headerStyle   = headerStyle,
-                        onSortField   = { sortField = it },
-                        onToggleDir   = { sortAscending = !sortAscending },
-                        onToggleView  = {
-                            viewModel.setViewType(
-                                if (viewType == NoteViewType.GRID) NoteViewType.LIST else NoteViewType.GRID
-                            )
-                        }
-                    )
                     if (currentNotes.isEmpty()) {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text(
-                                "Chưa có ghi chú trong thư mục này",
-                                color     = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = TextAlign.Center,
-                                modifier  = Modifier.padding(32.dp)
-                            )
-                        }
+                        PhotoEventsEmptyState(modifier = Modifier.align(Alignment.Center))
                     } else if (viewType == NoteViewType.GRID) {
-                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        LazyColumn(
+                            modifier       = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(bottom = 80.dp)
+                        ) {
                             item {
                                 MasonryNoteGrid(
                                     notes         = currentNotes,
@@ -928,15 +753,13 @@ fun NoteListScreen(
                             }
                         }
                     }
-                    } // end folder Column
-                }
 
-                // Pull-to-refresh indicator (overlays top of the Box)
-                PullToRefreshContainer(
-                    state    = pullRefreshState,
-                    modifier = Modifier.align(Alignment.TopCenter)
-                )
-                } // end pull-to-refresh Box
+                    // Pull-to-refresh indicator (overlays top of the Box)
+                    PullToRefreshContainer(
+                        state    = pullRefreshState,
+                        modifier = Modifier.align(Alignment.TopCenter)
+                    )
+                }
             }
         }
     }
@@ -1097,9 +920,27 @@ fun NoteListScreen(
         )
     }
 
+    if (showSortSheet) {
+        PhotoEventsSortBottomSheet(
+            currentSortField     = sortField,
+            currentSortAscending = sortAscending,
+            currentViewType      = viewType,
+            onSelectSort         = { field, asc ->
+                sortField     = field
+                sortAscending = asc
+            },
+            onToggleViewType     = {
+                viewModel.setViewType(
+                    if (viewType == NoteViewType.GRID) NoteViewType.LIST else NoteViewType.GRID
+                )
+            },
+            onDismiss            = { showSortSheet = false }
+        )
+    }
+
     if (showCreateFolderDialog) {
-        CreateFolderDialog(
-            onConfirm = { name, color ->
+        PhotoEventsCreateCategoryDialog(
+            onSave = { name, color ->
                 viewModel.addCategory(name, color)
                 showCreateFolderDialog = false
             },
@@ -1110,8 +951,8 @@ fun NoteListScreen(
     folderToDelete?.let { folder ->
         AlertDialog(
             onDismissRequest = { folderToDelete = null },
-            title   = { Text("Delete folder") },
-            text    = { Text("Delete \"${folder.name}\"? Notes inside will be moved to root.") },
+            title   = { Text("Xóa danh mục") },
+            text    = { Text("Bạn có chắc muốn xóa \"${folder.name}\" không? Các ghi chú bên trong sẽ được chuyển về \"Tất cả\".") },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.deleteFolder(folder.id)
@@ -1121,17 +962,17 @@ fun NoteListScreen(
                         selectedNotes = emptySet()
                     }
                     folderToDelete = null
-                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                }) { Text("Xóa", color = MaterialTheme.colorScheme.error) }
             },
-            dismissButton = { TextButton(onClick = { folderToDelete = null }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { folderToDelete = null }) { Text("Hủy") } }
         )
     }
 
     folderToEdit?.let { folder ->
-        EditFolderDialog(
-            folder  = folder,
-            onSave  = { name, color ->
-                viewModel.updateCategory(folder.id, name, color)
+        PhotoEventsEditCategoryDialog(
+            category = folder,
+            onSave   = { updated ->
+                viewModel.updateCategory(folder.id, updated.name, updated.colorArgb)
                 folderToEdit = null
             },
             onDelete = {

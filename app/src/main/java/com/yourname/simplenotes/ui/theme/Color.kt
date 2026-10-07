@@ -27,6 +27,30 @@ val GlassPink              = Color(0xFFEC4899) // vibrant gradient accent
 val GlassEmerald           = Color(0xFF10B981) // success / mint accent
 val GlassAmber             = Color(0xFFF59E0B) // warning / pinned accent
 
+// ── Sakura Blossom Palette (PhotoEvents layout) ─────────────────────────
+val SakuraPink             = Color(0xFFFF6584)
+val SakuraPinkLight        = Color(0xFFFF8FA3)
+val SakuraPinkGlow         = Color(0xFFFFB3C1)
+val SakuraPinkContainer    = Color(0xFFFFE8EE)
+val SakuraBlushBg          = Color(0xFFFFF8FA)
+val SakuraSurface          = Color(0xFFFFFFFF)
+val SakuraSurfaceVariant   = Color(0xFFFFF2F5)
+val SakuraBorderSoft       = Color(0xFFFFE0E8)
+val SakuraBorderSubtle     = Color(0xFFFFF0F4)
+val SakuraTextPrimary      = Color(0xFF2E1A29)
+val SakuraTextSecondary    = Color(0xFF7E6676)
+
+// Sakura Blossom Dark Palette
+val SakuraBlushBgDark        = Color(0xFF1B131A)
+val SakuraSurfaceDark        = Color(0xFF261B24)
+val SakuraSurfaceVariantDark = Color(0xFF322330)
+val SakuraBorderSoftDark     = Color(0xFF4A3345)
+val SakuraBorderSubtleDark   = Color(0xFF3A2536)
+val SakuraTextPrimaryDark    = Color(0xFFFFF0F5)
+val SakuraTextSecondaryDark  = Color(0xFFCBB4C5)
+val SakuraPinkContainerDark  = Color(0xFF3F1D2B)
+
+
 // Backward-compatible aliases for existing references
 val DeskWalnut         = GlassObsidianBg
 val DeskWalnutSurface  = GlassObsidianSurface

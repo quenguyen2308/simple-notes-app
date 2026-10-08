@@ -448,7 +448,7 @@ fun NoteListScreen(
                     val drawerUnassignedCount = remember(notes) { notes.count { it.folderId == null } }
                     DrawerNavItem(
                         icon     = Icons.Default.FolderOpen,
-                        label    = "Chưa gán",
+                        label    = "Khác",
                         count    = drawerUnassignedCount,
                         selected = viewingFolderId == null && !pinnedOnly && selectedLabel == null,
                         onClick  = {
@@ -970,7 +970,7 @@ fun NoteListScreen(
         AlertDialog(
             onDismissRequest = { folderToDelete = null },
             title   = { Text("Xóa danh mục") },
-            text    = { Text("Bạn có chắc muốn xóa \"${folder.name}\" không? Các ghi chú bên trong sẽ được chuyển về \"Chưa gán\".") },
+            text    = { Text("Bạn có chắc muốn xóa \"${folder.name}\" không? Các ghi chú bên trong sẽ được chuyển về \"Khác\".") },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.deleteFolder(folder.id)

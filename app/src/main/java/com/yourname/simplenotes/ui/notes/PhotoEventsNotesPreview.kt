@@ -435,7 +435,7 @@ private data class StripCardItem(
 
 /**
  * Pinned category 2-row strip:
- * - Unassigned folder ("Chưa gán") permanently pinned at index 0 (fixed, cannot be moved).
+ * - Unassigned folder ("Khác") permanently pinned at index 0 (fixed, cannot be moved).
  * - User categories with custom colors, edit/delete, and drag reordering.
  * - Add new category card ("+ Tạo mới") at the end.
  * - Shrunk height + width to display cleanly in 2 rows without scrolling.
@@ -458,11 +458,11 @@ fun PhotoEventsCategoryStrip(
 
     val items = remember(categories, categoryCounts, unassignedNotesCount, selectedCategoryId) {
         buildList {
-            // 1. "Chưa gán" card - fixed at index 0, cannot change position
+            // 1. "Khác" card - fixed at index 0, cannot change position
             add(
                 StripCardItem(
                     key = "__unassigned__",
-                    name = "Chưa gán",
+                    name = "Khác",
                     icon = "📁",
                     countText = "$unassignedNotesCount ghi chú",
                     color = SakuraPink,

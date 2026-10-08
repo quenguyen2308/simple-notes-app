@@ -96,6 +96,8 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import org.koin.androidx.compose.koinViewModel
 
+private const val FOLDER_ALL = "__all__"
+
 private data class FolderNode(val category: Category, val children: List<FolderNode>)
 
 private fun buildFolderTree(categories: List<Category>): List<FolderNode> {
@@ -330,7 +332,8 @@ fun NoteListScreen(
     val currentFolder    = remember(viewingFolderId, categories) { categories.find { it.id == viewingFolderId } }
 
     val currentNotes = remember(notes, viewingFolderId, searchQuery, sortField, sortAscending) {
-        val base = if (viewingFolderId == null) notes
+        val base = if (viewingFolderId == null) notes.filter { it.folderId == null }
+                   else if (viewingFolderId == FOLDER_ALL) notes
                    else notes.filter { it.folderId == viewingFolderId }
         val filtered = if (searchQuery.isEmpty()) base
                        else base.filter {
@@ -434,6 +437,19 @@ fun NoteListScreen(
                         icon     = Icons.AutoMirrored.Filled.Notes,
                         label    = "Tất cả ghi chú",
                         count    = totalNoteCount,
+                        selected = viewingFolderId == FOLDER_ALL && !pinnedOnly && selectedLabel == null,
+                        onClick  = {
+                            viewingFolderId = FOLDER_ALL
+                            viewModel.setPinnedOnly(false)
+                            viewModel.setLabelFilter(null)
+                            scope.launch { drawerState.close() }
+                        }
+                    )
+                    val drawerUnassignedCount = remember(notes) { notes.count { it.folderId == null } }
+                    DrawerNavItem(
+                        icon     = Icons.Default.FolderOpen,
+                        label    = "Chưa gán",
+                        count    = drawerUnassignedCount,
                         selected = viewingFolderId == null && !pinnedOnly && selectedLabel == null,
                         onClick  = {
                             viewingFolderId = null
@@ -683,16 +699,18 @@ fun NoteListScreen(
                     }
                 }
 
-                // ── Pinned Category Carousel Strip (PhotoEvents horizontal strip) ──
+                // ── Pinned Category 2-Row Grid Strip (PhotoEvents 2-row strip) ──
+                val unassignedCount = remember(notes) { notes.count { it.folderId == null } }
                 PhotoEventsCategoryStrip(
-                    categories          = categories,
-                    categoryCounts      = categoryCounts,
-                    totalNotesCount     = notes.size,
-                    selectedCategoryId  = viewingFolderId,
-                    onSelectCategory    = { viewingFolderId = it },
-                    onAddCategoryClick  = { showCreateFolderDialog = true },
-                    onEditCategoryClick = { folderToEdit = it },
-                    onReorderCategories = { ids -> viewModel.reorderCategories(ids) }
+                    categories           = categories,
+                    categoryCounts       = categoryCounts,
+                    unassignedNotesCount = unassignedCount,
+                    totalNotesCount      = notes.size,
+                    selectedCategoryId   = viewingFolderId,
+                    onSelectCategory     = { viewingFolderId = it },
+                    onAddCategoryClick   = { showCreateFolderDialog = true },
+                    onEditCategoryClick  = { folderToEdit = it },
+                    onReorderCategories  = { ids -> viewModel.reorderCategories(ids) }
                 )
 
                 // ── Notes list / grid within Pull-to-refresh wrapper ──
@@ -952,7 +970,7 @@ fun NoteListScreen(
         AlertDialog(
             onDismissRequest = { folderToDelete = null },
             title   = { Text("Xóa danh mục") },
-            text    = { Text("Bạn có chắc muốn xóa \"${folder.name}\" không? Các ghi chú bên trong sẽ được chuyển về \"Tất cả\".") },
+            text    = { Text("Bạn có chắc muốn xóa \"${folder.name}\" không? Các ghi chú bên trong sẽ được chuyển về \"Chưa gán\".") },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.deleteFolder(folder.id)

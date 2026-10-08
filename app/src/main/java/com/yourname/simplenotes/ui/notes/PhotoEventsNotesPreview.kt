@@ -333,7 +333,7 @@ fun PhotoEventsCategoryCardItem(
     } else {
         if (isDark) SakuraBorderSoftDark else SakuraBorderSoft
     }
-    val elevation = if (isSelected) 3.5.dp else 1.dp
+    val elevation = if (isSelected) 3.dp else 0.8.dp
     val titleColor = if (isSelected) {
         Color.White
     } else if (isAddAction) {
@@ -349,80 +349,70 @@ fun PhotoEventsCategoryCardItem(
 
     Card(
         onClick = onClick,
-        modifier = modifier
-            .height(60.dp)
-            .padding(vertical = 2.dp),
-        shape = RoundedCornerShape(18.dp),
+        modifier = modifier.height(48.dp),
+        shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(containerColor = cardBg),
         border = BorderStroke(
-            width = if (isAddAction) 1.5.dp else 1.2.dp,
+            width = if (isAddAction) 1.2.dp else 1.dp,
             color = strokeColor
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = elevation)
     ) {
-        Row(
-            modifier = Modifier
-                .padding(start = 10.dp, end = 14.dp)
-                .fillMaxSize(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Icon frame (38dp circular) with category color tint
-            Box(
+        Box(modifier = Modifier.fillMaxSize()) {
+            Row(
                 modifier = Modifier
-                    .size(38.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (isSelected) Color.White.copy(alpha = 0.22f)
-                        else categoryColor.copy(alpha = if (isDark) 0.22f else 0.14f)
-                    ),
-                contentAlignment = Alignment.Center
+                    .fillMaxSize()
+                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(text = icon, fontSize = 18.sp)
-            }
+                // Icon frame / emoji
+                Text(
+                    text = icon,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(end = 2.dp)
+                )
 
-            Spacer(Modifier.width(10.dp))
-
-            // Title & Count + Color Indicator Dot
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                // Title & Count
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.Center
+                ) {
                     Text(
                         text = name,
-                        fontSize = 13.sp,
+                        fontSize = 9.5.sp,
+                        lineHeight = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = titleColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    if (!isAddAction && !isSelected) {
-                        Spacer(Modifier.width(5.dp))
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .clip(CircleShape)
-                                .background(categoryColor)
-                        )
-                    }
+                    Spacer(modifier = Modifier.height(1.dp))
+                    Text(
+                        text = countText,
+                        fontSize = 8.sp,
+                        lineHeight = 9.5.sp,
+                        color = countColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
-                Text(
-                    text = countText,
-                    fontSize = 11.sp,
-                    color = countColor,
-                    maxLines = 1
-                )
             }
 
-            // Edit icon button (visible when selected and editable)
+            // Edit icon in top-end corner when selected and editable
             if (isSelected && onEditClick != null && !isAddAction) {
-                Spacer(Modifier.width(6.dp))
-                IconButton(
-                    onClick = onEditClick,
-                    modifier = Modifier.size(24.dp)
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 3.dp, end = 3.dp)
+                        .size(14.dp)
+                        .clickable(onClick = onEditClick),
+                    contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.Edit,
                         contentDescription = "Sửa danh mục",
-                        tint = Color.White,
-                        modifier = Modifier.size(13.dp)
+                        tint = Color.White.copy(alpha = 0.9f),
+                        modifier = Modifier.size(9.dp)
                     )
                 }
             }
@@ -430,12 +420,32 @@ fun PhotoEventsCategoryCardItem(
     }
 }
 
-/** Pinned horizontal carousel of category cards with custom colors support and drag reordering. */
+private data class StripCardItem(
+    val key: String,
+    val name: String,
+    val icon: String,
+    val countText: String,
+    val color: Color,
+    val isSelected: Boolean,
+    val isAddAction: Boolean = false,
+    val onClick: () -> Unit,
+    val onEditClick: (() -> Unit)? = null,
+    val categoryIndex: Int? = null
+)
+
+/**
+ * Pinned category 2-row strip:
+ * - Unassigned folder ("Chưa gán") permanently pinned at index 0 (fixed, cannot be moved).
+ * - User categories with custom colors, edit/delete, and drag reordering.
+ * - Add new category card ("+ Tạo mới") at the end.
+ * - Shrunk height + width to display cleanly in 2 rows without scrolling.
+ */
 @Composable
 fun PhotoEventsCategoryStrip(
     categories: List<Category>,
     categoryCounts: Map<String, Int>,
-    totalNotesCount: Int,
+    unassignedNotesCount: Int = 0,
+    totalNotesCount: Int = unassignedNotesCount,
     selectedCategoryId: String?,
     onSelectCategory: (String?) -> Unit,
     onAddCategoryClick: () -> Unit,
@@ -446,98 +456,213 @@ fun PhotoEventsCategoryStrip(
     var draggingIndex by remember { mutableStateOf<Int?>(null) }
     var dragAccumulatedX by remember { mutableStateOf(0f) }
 
-    LazyRow(
+    val items = remember(categories, categoryCounts, unassignedNotesCount, selectedCategoryId) {
+        buildList {
+            // 1. "Chưa gán" card - fixed at index 0, cannot change position
+            add(
+                StripCardItem(
+                    key = "__unassigned__",
+                    name = "Chưa gán",
+                    icon = "📁",
+                    countText = "$unassignedNotesCount ghi chú",
+                    color = SakuraPink,
+                    isSelected = selectedCategoryId == null,
+                    onClick = { onSelectCategory(null) }
+                )
+            )
+
+            // 2..N User Category Cards
+            categories.forEachIndexed { index, cat ->
+                val count = categoryCounts[cat.id] ?: cat.notesCount
+                val emoji = extractEmojiOrFolder(cat.name)
+                val cleanName = cat.name.removePrefix(emoji).trim().ifBlank { cat.name }
+                add(
+                    StripCardItem(
+                        key = cat.id,
+                        name = cleanName,
+                        icon = emoji,
+                        countText = "$count ghi chú",
+                        color = Color(cat.colorArgb),
+                        isSelected = selectedCategoryId == cat.id,
+                        onClick = { onSelectCategory(cat.id) },
+                        onEditClick = { onEditCategoryClick(cat) },
+                        categoryIndex = index
+                    )
+                )
+            }
+
+            // N+1 "+ Tạo mới" card
+            add(
+                StripCardItem(
+                    key = "__add_new__",
+                    name = "Tạo mới",
+                    icon = "➕",
+                    countText = "Thêm mục",
+                    color = SakuraPink,
+                    isSelected = false,
+                    isAddAction = true,
+                    onClick = onAddCategoryClick
+                )
+            )
+        }
+    }
+
+    val total = items.size
+    val row1Count = if (total <= 2) 1 else (total + 1) / 2
+    val row2Count = total - row1Count
+    val numColumns = maxOf(row1Count, row2Count)
+
+    Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        contentPadding = PaddingValues(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        // 1. "Tất cả" card (defaults to Sakura Pink)
-        item {
-            PhotoEventsCategoryCardItem(
-                name = "Tất cả",
-                icon = "🌸",
-                countText = "$totalNotesCount ghi chú",
-                categoryColor = SakuraPink,
-                isSelected = selectedCategoryId == null,
-                onClick = { onSelectCategory(null) }
-            )
-        }
-
-        // 2..N User Category Cards with their custom colorArgb and drag-to-reorder support
-        itemsIndexed(categories, key = { _, it -> it.id }) { index, cat ->
-            val count = categoryCounts[cat.id] ?: cat.notesCount
-            val emoji = remember(cat.name) { extractEmojiOrFolder(cat.name) }
-            val cleanName = remember(cat.name) { cat.name.removePrefix(emoji).trim().ifBlank { cat.name } }
-            val catColor = remember(cat.colorArgb) { Color(cat.colorArgb) }
-            val isDragging = draggingIndex == index
-
-            val dragModifier = if (onReorderCategories != null) {
-                Modifier
-                    .zIndex(if (isDragging) 1f else 0f)
-                    .pointerInput(cat.id) {
-                        detectDragGesturesAfterLongPress(
-                            onDragStart = {
-                                draggingIndex = index
-                                dragAccumulatedX = 0f
-                            },
-                            onDrag = { change, dragAmount ->
-                                change.consume()
-                                dragAccumulatedX += dragAmount.x
-                                val thresholdPx = 70.dp.toPx()
-                                if (dragAccumulatedX > thresholdPx && index < categories.lastIndex) {
-                                    val currentList = categories.map { it.id }.toMutableList()
-                                    val targetIndex = index + 1
-                                    val item = currentList.removeAt(index)
-                                    currentList.add(targetIndex, item)
-                                    draggingIndex = targetIndex
-                                    dragAccumulatedX = 0f
-                                    onReorderCategories(currentList)
-                                } else if (dragAccumulatedX < -thresholdPx && index > 0) {
-                                    val currentList = categories.map { it.id }.toMutableList()
-                                    val targetIndex = index - 1
-                                    val item = currentList.removeAt(index)
-                                    currentList.add(targetIndex, item)
-                                    draggingIndex = targetIndex
-                                    dragAccumulatedX = 0f
-                                    onReorderCategories(currentList)
-                                }
-                            },
-                            onDragEnd = {
-                                draggingIndex = null
-                                dragAccumulatedX = 0f
-                            },
-                            onDragCancel = {
-                                draggingIndex = null
-                                dragAccumulatedX = 0f
+        // Row 1
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            for (col in 0 until numColumns) {
+                if (col < row1Count) {
+                    val item = items[col]
+                    val dragModifier = if (item.categoryIndex != null && onReorderCategories != null) {
+                        val catIdx = item.categoryIndex
+                        val isDragging = draggingIndex == catIdx
+                        Modifier
+                            .zIndex(if (isDragging) 1f else 0f)
+                            .pointerInput(item.key) {
+                                detectDragGesturesAfterLongPress(
+                                    onDragStart = {
+                                        draggingIndex = catIdx
+                                        dragAccumulatedX = 0f
+                                    },
+                                    onDrag = { change, dragAmount ->
+                                        change.consume()
+                                        dragAccumulatedX += dragAmount.x
+                                        val thresholdPx = 50.dp.toPx()
+                                        if (dragAccumulatedX > thresholdPx && catIdx < categories.lastIndex) {
+                                            val currentList = categories.map { it.id }.toMutableList()
+                                            val targetIndex = catIdx + 1
+                                            val moved = currentList.removeAt(catIdx)
+                                            currentList.add(targetIndex, moved)
+                                            draggingIndex = targetIndex
+                                            dragAccumulatedX = 0f
+                                            onReorderCategories(currentList)
+                                        } else if (dragAccumulatedX < -thresholdPx && catIdx > 0) {
+                                            val currentList = categories.map { it.id }.toMutableList()
+                                            val targetIndex = catIdx - 1
+                                            val moved = currentList.removeAt(catIdx)
+                                            currentList.add(targetIndex, moved)
+                                            draggingIndex = targetIndex
+                                            dragAccumulatedX = 0f
+                                            onReorderCategories(currentList)
+                                        }
+                                    },
+                                    onDragEnd = {
+                                        draggingIndex = null
+                                        dragAccumulatedX = 0f
+                                    },
+                                    onDragCancel = {
+                                        draggingIndex = null
+                                        dragAccumulatedX = 0f
+                                    }
+                                )
                             }
-                        )
-                    }
-            } else Modifier
+                    } else Modifier
 
-            PhotoEventsCategoryCardItem(
-                name = cleanName,
-                icon = emoji,
-                countText = "$count ghi chú",
-                categoryColor = catColor,
-                isSelected = selectedCategoryId == cat.id,
-                onClick = { onSelectCategory(cat.id) },
-                onEditClick = { onEditCategoryClick(cat) },
-                modifier = dragModifier
-            )
+                    PhotoEventsCategoryCardItem(
+                        name = item.name,
+                        icon = item.icon,
+                        countText = item.countText,
+                        categoryColor = item.color,
+                        isSelected = item.isSelected,
+                        onClick = item.onClick,
+                        onEditClick = item.onEditClick,
+                        isAddAction = item.isAddAction,
+                        modifier = Modifier
+                            .weight(1f)
+                            .then(dragModifier)
+                    )
+                } else {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+            }
         }
 
-        // N+1 "+ Tạo mới" card
-        item {
-            PhotoEventsCategoryCardItem(
-                name = "Tạo mới",
-                icon = "➕",
-                countText = "Thêm danh mục",
-                isSelected = false,
-                isAddAction = true,
-                onClick = onAddCategoryClick
-            )
+        // Row 2
+        if (row2Count > 0) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                for (col in 0 until numColumns) {
+                    val itemIdx = row1Count + col
+                    if (itemIdx < total) {
+                        val item = items[itemIdx]
+                        val dragModifier = if (item.categoryIndex != null && onReorderCategories != null) {
+                            val catIdx = item.categoryIndex
+                            val isDragging = draggingIndex == catIdx
+                            Modifier
+                                .zIndex(if (isDragging) 1f else 0f)
+                                .pointerInput(item.key) {
+                                    detectDragGesturesAfterLongPress(
+                                        onDragStart = {
+                                            draggingIndex = catIdx
+                                            dragAccumulatedX = 0f
+                                        },
+                                        onDrag = { change, dragAmount ->
+                                            change.consume()
+                                            dragAccumulatedX += dragAmount.x
+                                            val thresholdPx = 50.dp.toPx()
+                                            if (dragAccumulatedX > thresholdPx && catIdx < categories.lastIndex) {
+                                                val currentList = categories.map { it.id }.toMutableList()
+                                                val targetIndex = catIdx + 1
+                                                val moved = currentList.removeAt(catIdx)
+                                                currentList.add(targetIndex, moved)
+                                                draggingIndex = targetIndex
+                                                dragAccumulatedX = 0f
+                                                onReorderCategories(currentList)
+                                            } else if (dragAccumulatedX < -thresholdPx && catIdx > 0) {
+                                                val currentList = categories.map { it.id }.toMutableList()
+                                                val targetIndex = catIdx - 1
+                                                val moved = currentList.removeAt(catIdx)
+                                                currentList.add(targetIndex, moved)
+                                                draggingIndex = targetIndex
+                                                dragAccumulatedX = 0f
+                                                onReorderCategories(currentList)
+                                            }
+                                        },
+                                        onDragEnd = {
+                                            draggingIndex = null
+                                            dragAccumulatedX = 0f
+                                        },
+                                        onDragCancel = {
+                                            draggingIndex = null
+                                            dragAccumulatedX = 0f
+                                        }
+                                    )
+                                }
+                        } else Modifier
+
+                        PhotoEventsCategoryCardItem(
+                            name = item.name,
+                            icon = item.icon,
+                            countText = item.countText,
+                            categoryColor = item.color,
+                            isSelected = item.isSelected,
+                            onClick = item.onClick,
+                            onEditClick = item.onEditClick,
+                            isAddAction = item.isAddAction,
+                            modifier = Modifier
+                                .weight(1f)
+                                .then(dragModifier)
+                        )
+                    } else {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+            }
         }
     }
 }
@@ -1145,8 +1270,12 @@ fun PhotoEventsNotesPreviewScreen(
         )
     }
 
+    val unassignedNotesCount = remember(notes) {
+        notes.count { it.folderId == null }
+    }
+
     val filteredNotes = remember(selectedCategoryId, notes) {
-        if (selectedCategoryId == null) notes
+        if (selectedCategoryId == null) notes.filter { it.folderId == null }
         else notes.filter { it.folderId == selectedCategoryId }
     }
 
@@ -1191,10 +1320,11 @@ fun PhotoEventsNotesPreviewScreen(
                 )
             }
 
-            // 2. Pinned Categories Horizontal Strip
+            // 2. Pinned Categories 2-Row Strip
             PhotoEventsCategoryStrip(
                 categories = categories,
                 categoryCounts = categoryCounts,
+                unassignedNotesCount = unassignedNotesCount,
                 totalNotesCount = notes.size,
                 selectedCategoryId = selectedCategoryId,
                 onSelectCategory = { selectedCategoryId = it },

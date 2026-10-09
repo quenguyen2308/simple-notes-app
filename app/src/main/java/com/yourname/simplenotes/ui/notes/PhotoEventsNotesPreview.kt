@@ -10,18 +10,22 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -190,12 +194,6 @@ fun PhotoEventsHeader(
                     fontWeight = FontWeight.Black,
                     color = textPrimary,
                     letterSpacing = (-0.4).sp
-                )
-                Text(
-                    text = "Sổ tay & Ghi chú cá nhân",
-                    fontSize = 11.5.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = textSecondary
                 )
             }
         }
@@ -368,39 +366,45 @@ fun PhotoEventsCategoryCardItem(
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = elevation)
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.fillMaxHeight().wrapContentWidth()) {
             Row(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                    .fillMaxHeight()
+                    .padding(
+                        start = 10.dp,
+                        end = if (isSelected && onEditClick != null && !isAddAction) 22.dp else 10.dp,
+                        top = 2.dp,
+                        bottom = 2.dp
+                    ),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // Icon frame / emoji
                 Text(
                     text = icon,
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(end = 2.dp)
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(end = 4.dp)
                 )
 
                 // Title & Count
                 Column(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.wrapContentWidth(),
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text(
                         text = name,
-                        fontSize = 9.5.sp,
-                        lineHeight = 11.sp,
+                        fontSize = 10.sp,
+                        lineHeight = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = titleColor,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.widthIn(max = 140.dp)
                     )
                     Spacer(modifier = Modifier.height(1.dp))
                     Text(
                         text = countText,
-                        fontSize = 8.sp,
-                        lineHeight = 9.5.sp,
+                        fontSize = 8.5.sp,
+                        lineHeight = 10.5.sp,
                         color = countColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -518,9 +522,68 @@ fun PhotoEventsCategoryStrip(
     }
 
     val total = items.size
-    val row1Count = if (total <= 2) 1 else (total + 1) / 2
+    val row1Count = if (total <= 3) total else (total + 1) / 2
     val row2Count = total - row1Count
-    val numColumns = maxOf(row1Count, row2Count)
+
+    @Composable
+    fun RenderCardItem(item: StripCardItem) {
+        val dragModifier = if (item.categoryIndex != null && onReorderCategories != null) {
+            val catIdx = item.categoryIndex
+            val isDragging = draggingIndex == catIdx
+            Modifier
+                .zIndex(if (isDragging) 1f else 0f)
+                .pointerInput(item.key) {
+                    detectDragGesturesAfterLongPress(
+                        onDragStart = {
+                            draggingIndex = catIdx
+                            dragAccumulatedX = 0f
+                        },
+                        onDrag = { change, dragAmount ->
+                            change.consume()
+                            dragAccumulatedX += dragAmount.x
+                            val thresholdPx = 50.dp.toPx()
+                            if (dragAccumulatedX > thresholdPx && catIdx < categories.lastIndex) {
+                                val currentList = categories.map { it.id }.toMutableList()
+                                val targetIndex = catIdx + 1
+                                val moved = currentList.removeAt(catIdx)
+                                currentList.add(targetIndex, moved)
+                                draggingIndex = targetIndex
+                                dragAccumulatedX = 0f
+                                onReorderCategories(currentList)
+                            } else if (dragAccumulatedX < -thresholdPx && catIdx > 0) {
+                                val currentList = categories.map { it.id }.toMutableList()
+                                val targetIndex = catIdx - 1
+                                val moved = currentList.removeAt(catIdx)
+                                currentList.add(targetIndex, moved)
+                                draggingIndex = targetIndex
+                                dragAccumulatedX = 0f
+                                onReorderCategories(currentList)
+                            }
+                        },
+                        onDragEnd = {
+                            draggingIndex = null
+                            dragAccumulatedX = 0f
+                        },
+                        onDragCancel = {
+                            draggingIndex = null
+                            dragAccumulatedX = 0f
+                        }
+                    )
+                }
+        } else Modifier
+
+        PhotoEventsCategoryCardItem(
+            name = item.name,
+            icon = item.icon,
+            countText = item.countText,
+            categoryColor = item.color,
+            isSelected = item.isSelected,
+            onClick = item.onClick,
+            onEditClick = item.onEditClick,
+            isAddAction = item.isAddAction,
+            modifier = dragModifier
+        )
+    }
 
     Column(
         modifier = modifier
@@ -530,147 +593,28 @@ fun PhotoEventsCategoryStrip(
     ) {
         // Row 1
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            for (col in 0 until numColumns) {
-                if (col < row1Count) {
-                    val item = items[col]
-                    val dragModifier = if (item.categoryIndex != null && onReorderCategories != null) {
-                        val catIdx = item.categoryIndex
-                        val isDragging = draggingIndex == catIdx
-                        Modifier
-                            .zIndex(if (isDragging) 1f else 0f)
-                            .pointerInput(item.key) {
-                                detectDragGesturesAfterLongPress(
-                                    onDragStart = {
-                                        draggingIndex = catIdx
-                                        dragAccumulatedX = 0f
-                                    },
-                                    onDrag = { change, dragAmount ->
-                                        change.consume()
-                                        dragAccumulatedX += dragAmount.x
-                                        val thresholdPx = 50.dp.toPx()
-                                        if (dragAccumulatedX > thresholdPx && catIdx < categories.lastIndex) {
-                                            val currentList = categories.map { it.id }.toMutableList()
-                                            val targetIndex = catIdx + 1
-                                            val moved = currentList.removeAt(catIdx)
-                                            currentList.add(targetIndex, moved)
-                                            draggingIndex = targetIndex
-                                            dragAccumulatedX = 0f
-                                            onReorderCategories(currentList)
-                                        } else if (dragAccumulatedX < -thresholdPx && catIdx > 0) {
-                                            val currentList = categories.map { it.id }.toMutableList()
-                                            val targetIndex = catIdx - 1
-                                            val moved = currentList.removeAt(catIdx)
-                                            currentList.add(targetIndex, moved)
-                                            draggingIndex = targetIndex
-                                            dragAccumulatedX = 0f
-                                            onReorderCategories(currentList)
-                                        }
-                                    },
-                                    onDragEnd = {
-                                        draggingIndex = null
-                                        dragAccumulatedX = 0f
-                                    },
-                                    onDragCancel = {
-                                        draggingIndex = null
-                                        dragAccumulatedX = 0f
-                                    }
-                                )
-                            }
-                    } else Modifier
-
-                    PhotoEventsCategoryCardItem(
-                        name = item.name,
-                        icon = item.icon,
-                        countText = item.countText,
-                        categoryColor = item.color,
-                        isSelected = item.isSelected,
-                        onClick = item.onClick,
-                        onEditClick = item.onEditClick,
-                        isAddAction = item.isAddAction,
-                        modifier = Modifier
-                            .weight(1f)
-                            .then(dragModifier)
-                    )
-                } else {
-                    Spacer(modifier = Modifier.weight(1f))
-                }
+            for (i in 0 until row1Count) {
+                RenderCardItem(items[i])
             }
         }
 
         // Row 2
         if (row2Count > 0) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                for (col in 0 until numColumns) {
-                    val itemIdx = row1Count + col
-                    if (itemIdx < total) {
-                        val item = items[itemIdx]
-                        val dragModifier = if (item.categoryIndex != null && onReorderCategories != null) {
-                            val catIdx = item.categoryIndex
-                            val isDragging = draggingIndex == catIdx
-                            Modifier
-                                .zIndex(if (isDragging) 1f else 0f)
-                                .pointerInput(item.key) {
-                                    detectDragGesturesAfterLongPress(
-                                        onDragStart = {
-                                            draggingIndex = catIdx
-                                            dragAccumulatedX = 0f
-                                        },
-                                        onDrag = { change, dragAmount ->
-                                            change.consume()
-                                            dragAccumulatedX += dragAmount.x
-                                            val thresholdPx = 50.dp.toPx()
-                                            if (dragAccumulatedX > thresholdPx && catIdx < categories.lastIndex) {
-                                                val currentList = categories.map { it.id }.toMutableList()
-                                                val targetIndex = catIdx + 1
-                                                val moved = currentList.removeAt(catIdx)
-                                                currentList.add(targetIndex, moved)
-                                                draggingIndex = targetIndex
-                                                dragAccumulatedX = 0f
-                                                onReorderCategories(currentList)
-                                            } else if (dragAccumulatedX < -thresholdPx && catIdx > 0) {
-                                                val currentList = categories.map { it.id }.toMutableList()
-                                                val targetIndex = catIdx - 1
-                                                val moved = currentList.removeAt(catIdx)
-                                                currentList.add(targetIndex, moved)
-                                                draggingIndex = targetIndex
-                                                dragAccumulatedX = 0f
-                                                onReorderCategories(currentList)
-                                            }
-                                        },
-                                        onDragEnd = {
-                                            draggingIndex = null
-                                            dragAccumulatedX = 0f
-                                        },
-                                        onDragCancel = {
-                                            draggingIndex = null
-                                            dragAccumulatedX = 0f
-                                        }
-                                    )
-                                }
-                        } else Modifier
-
-                        PhotoEventsCategoryCardItem(
-                            name = item.name,
-                            icon = item.icon,
-                            countText = item.countText,
-                            categoryColor = item.color,
-                            isSelected = item.isSelected,
-                            onClick = item.onClick,
-                            onEditClick = item.onEditClick,
-                            isAddAction = item.isAddAction,
-                            modifier = Modifier
-                                .weight(1f)
-                                .then(dragModifier)
-                        )
-                    } else {
-                        Spacer(modifier = Modifier.weight(1f))
-                    }
+                for (i in row1Count until total) {
+                    RenderCardItem(items[i])
                 }
             }
         }

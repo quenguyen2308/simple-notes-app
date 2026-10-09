@@ -39,11 +39,14 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -84,6 +87,12 @@ import com.yourname.simplenotes.data.local.entities.ContentBlock
 import com.yourname.simplenotes.domain.model.Category
 import com.yourname.simplenotes.domain.model.Note
 import com.yourname.simplenotes.ui.theme.FOLDER_COLOR_PALETTE
+import com.yourname.simplenotes.ui.theme.FrostedGlassBgDark
+import com.yourname.simplenotes.ui.theme.FrostedGlassBgLight
+import com.yourname.simplenotes.ui.theme.FrostedGlassBorderDark
+import com.yourname.simplenotes.ui.theme.FrostedGlassBorderLight
+import com.yourname.simplenotes.ui.theme.FrostedGlassTileDark
+import com.yourname.simplenotes.ui.theme.FrostedGlassTileLight
 import com.yourname.simplenotes.ui.theme.HeaderStyle
 import com.yourname.simplenotes.ui.theme.SakuraBlushBg
 import com.yourname.simplenotes.ui.theme.SakuraBlushBgDark
@@ -99,6 +108,7 @@ import com.yourname.simplenotes.ui.theme.SakuraTextPrimary
 import com.yourname.simplenotes.ui.theme.SakuraTextPrimaryDark
 import com.yourname.simplenotes.ui.theme.SakuraTextSecondary
 import com.yourname.simplenotes.ui.theme.SakuraTextSecondaryDark
+import com.yourname.simplenotes.ui.theme.isAppInDarkTheme
 
 /**
  * PhotoEvents layout adaptation for Simple Notes.
@@ -123,7 +133,7 @@ fun PhotoEventsHeader(
     onSortClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = isAppInDarkTheme()
     val surfaceColor = if (isDark) SakuraSurfaceDark else SakuraSurface
     val borderCol = if (isDark) SakuraBorderSoftDark else SakuraBorderSoft
     val textPrimary = if (isDark) SakuraTextPrimaryDark else SakuraTextPrimary
@@ -249,7 +259,7 @@ fun PhotoEventsSelectionBar(
     onDelete: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = isAppInDarkTheme()
     val containerCol = if (isDark) SakuraPinkContainerDark else SakuraPinkContainer
     val borderCol = if (isDark) SakuraBorderSoftDark else SakuraBorderSoft
 
@@ -320,7 +330,7 @@ fun PhotoEventsCategoryCardItem(
     isAddAction: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = isAppInDarkTheme()
     val cardBg = if (isSelected) {
         categoryColor
     } else {
@@ -678,8 +688,32 @@ fun PhotoEventsEditCategoryDialog(
     var name by remember { mutableStateOf(category.name) }
     var selectedColorArgb by remember { mutableStateOf(category.colorArgb) }
 
+    val isDark = isAppInDarkTheme()
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = if (isDark) FrostedGlassBgDark else FrostedGlassBgLight,
+        tonalElevation = 0.dp,
+        shape = RoundedCornerShape(28.dp),
+        modifier = Modifier.border(
+            BorderStroke(1.2.dp, if (isDark) FrostedGlassBorderDark else FrostedGlassBorderLight),
+            RoundedCornerShape(28.dp)
+        ),
+        icon = {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(52.dp)
+                    .background(SakuraPink.copy(alpha = 0.12f), CircleShape)
+                    .border(1.dp, SakuraPink.copy(alpha = 0.25f), CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Edit,
+                    contentDescription = null,
+                    tint = SakuraPink,
+                    modifier = Modifier.size(26.dp)
+                )
+            }
+        },
         title = {
             Text(
                 text = "Tùy chỉnh danh mục",
@@ -694,13 +728,15 @@ fun PhotoEventsEditCategoryDialog(
                     onValueChange = { name = it },
                     label = { Text("Tên danh mục") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
                 )
 
                 // Live preview of category card with chosen color
                 Surface(
                     color = Color(selectedColorArgb),
                     shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, if (isDark) Color(0x1FFFFFFF) else SakuraBorderSoft.copy(alpha = 0.6f)),
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(46.dp)
@@ -775,19 +811,25 @@ fun PhotoEventsEditCategoryDialog(
             }
         },
         confirmButton = {
-            TextButton(
+            Button(
                 onClick = {
                     if (name.isNotBlank()) {
                         onSave(category.copy(name = name.trim(), colorArgb = selectedColorArgb))
                     }
                 },
-                enabled = name.isNotBlank()
+                enabled = name.isNotBlank(),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = SakuraPink)
             ) {
-                Text("Lưu", fontWeight = FontWeight.Bold, color = SakuraPink)
+                Text("Lưu", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            OutlinedButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, if (isDark) Color(0x2EFFFFFF) else SakuraBorderSoft)
+            ) {
                 Text("Hủy")
             }
         }
@@ -803,8 +845,32 @@ fun PhotoEventsCreateCategoryDialog(
     var name by remember { mutableStateOf("") }
     var selectedColorArgb by remember { mutableStateOf(FOLDER_COLOR_PALETTE.first()) }
 
+    val isDark = isAppInDarkTheme()
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = if (isDark) FrostedGlassBgDark else FrostedGlassBgLight,
+        tonalElevation = 0.dp,
+        shape = RoundedCornerShape(28.dp),
+        modifier = Modifier.border(
+            BorderStroke(1.2.dp, if (isDark) FrostedGlassBorderDark else FrostedGlassBorderLight),
+            RoundedCornerShape(28.dp)
+        ),
+        icon = {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(52.dp)
+                    .background(SakuraPink.copy(alpha = 0.12f), CircleShape)
+                    .border(1.dp, SakuraPink.copy(alpha = 0.25f), CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Category,
+                    contentDescription = null,
+                    tint = SakuraPink,
+                    modifier = Modifier.size(26.dp)
+                )
+            }
+        },
         title = {
             Text(
                 text = "Tạo danh mục mới",
@@ -819,13 +885,15 @@ fun PhotoEventsCreateCategoryDialog(
                     onValueChange = { name = it },
                     label = { Text("Tên danh mục") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
                 )
 
                 // Live preview of category card with chosen color
                 Surface(
                     color = Color(selectedColorArgb),
                     shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, if (isDark) Color(0x1FFFFFFF) else SakuraBorderSoft.copy(alpha = 0.6f)),
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(46.dp)
@@ -891,19 +959,25 @@ fun PhotoEventsCreateCategoryDialog(
             }
         },
         confirmButton = {
-            TextButton(
+            Button(
                 onClick = {
                     if (name.isNotBlank()) {
                         onSave(name.trim(), selectedColorArgb)
                     }
                 },
-                enabled = name.isNotBlank()
+                enabled = name.isNotBlank(),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = SakuraPink)
             ) {
-                Text("Tạo", fontWeight = FontWeight.Bold, color = SakuraPink)
+                Text("Tạo", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            OutlinedButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, if (isDark) Color(0x2EFFFFFF) else SakuraBorderSoft)
+            ) {
                 Text("Hủy")
             }
         }
@@ -921,7 +995,7 @@ fun PhotoEventsSortBottomSheet(
     onToggleViewType: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = isAppInDarkTheme()
     val sheetState = rememberModalBottomSheetState()
     val surfaceColor = if (isDark) SakuraSurfaceDark else SakuraSurface
     val textPrimary = if (isDark) SakuraTextPrimaryDark else SakuraTextPrimary
@@ -1070,7 +1144,7 @@ fun PhotoEventsSortBottomSheet(
 fun PhotoEventsEmptyState(
     modifier: Modifier = Modifier
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = isAppInDarkTheme()
     val containerCol = if (isDark) SakuraPinkContainerDark else SakuraPinkContainer
     val borderCol = if (isDark) SakuraBorderSoftDark else SakuraBorderSoft
     val textPrimary = if (isDark) SakuraTextPrimaryDark else SakuraTextPrimary
@@ -1250,7 +1324,7 @@ private fun sampleNotes(): List<Note> = listOf(
 fun PhotoEventsNotesPreviewScreen(
     initialSelectionMode: Boolean = false
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = isAppInDarkTheme()
     var categories by remember { mutableStateOf(sampleCategories()) }
     val notes = remember { sampleNotes() }
     var selectedCategoryId by remember { mutableStateOf<String?>(null) }

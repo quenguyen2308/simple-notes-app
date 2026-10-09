@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yourname.simplenotes.data.local.entities.ContentBlock
 import com.yourname.simplenotes.domain.model.Note
+import com.yourname.simplenotes.ui.theme.isAppInDarkTheme
 import com.yourname.simplenotes.util.HtmlSpannableConverter
 import java.text.SimpleDateFormat
 import java.util.*
@@ -48,7 +49,7 @@ fun NoteListItemFlat(
     val colorTs      = MaterialTheme.colorScheme.outline
     val colorBorder  = MaterialTheme.colorScheme.outlineVariant
 
-    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val isDark = isAppInDarkTheme()
     val noteColor = remember(note.backgroundColor) {
         val argb = note.backgroundColor
         if (argb == 0xFFFFFFFF.toInt() || argb == 0) null else Color(argb)

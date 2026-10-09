@@ -12,6 +12,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -19,6 +21,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -27,7 +32,14 @@ import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.automirrored.filled.ViewList
+import androidx.compose.material.icons.automirrored.rounded.Notes
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.LocalOffer
+import androidx.compose.material.icons.rounded.PushPin
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
@@ -77,6 +89,12 @@ import com.yourname.simplenotes.ui.settings.SettingsScreen
 import com.yourname.simplenotes.ui.theme.FOLDER_COLOR_PALETTE
 import com.yourname.simplenotes.ui.theme.HeaderStyle
 import com.yourname.simplenotes.ui.theme.SakuraBlushBg
+import com.yourname.simplenotes.ui.theme.FrostedGlassBgDark
+import com.yourname.simplenotes.ui.theme.FrostedGlassBgLight
+import com.yourname.simplenotes.ui.theme.FrostedGlassBorderDark
+import com.yourname.simplenotes.ui.theme.FrostedGlassBorderLight
+import com.yourname.simplenotes.ui.theme.FrostedGlassTileDark
+import com.yourname.simplenotes.ui.theme.FrostedGlassTileLight
 import com.yourname.simplenotes.ui.theme.SakuraBlushBgDark
 import com.yourname.simplenotes.ui.theme.SakuraBorderSoft
 import com.yourname.simplenotes.ui.theme.SakuraBorderSoftDark
@@ -90,6 +108,7 @@ import com.yourname.simplenotes.ui.theme.SakuraTextPrimary
 import com.yourname.simplenotes.ui.theme.SakuraTextPrimaryDark
 import com.yourname.simplenotes.ui.theme.SakuraTextSecondary
 import com.yourname.simplenotes.ui.theme.SakuraTextSecondaryDark
+import com.yourname.simplenotes.ui.theme.isAppInDarkTheme
 import com.yourname.simplenotes.util.BiometricHelper
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -115,46 +134,6 @@ enum class SortField(val label: String) {
     TITLE("Title")
 }
 
-/**
- * 2-column masonry layout: notes are zig-zag assigned to columns by index,
- * so each column's card heights vary naturally with content (no
- * LazyVerticalStaggeredGrid available at the pinned Compose Foundation version).
- */
-@Composable
-private fun MasonryNoteGrid(
-    notes: List<Note>,
-    selectedNotes: Set<String>,
-    onNoteClick: (Note) -> Unit,
-    onNoteLongPress: (Note) -> Unit,
-    onShowActions: (Note) -> Unit,
-    headerStyle: HeaderStyle,
-    modifier: Modifier = Modifier,
-    columns: Int = 2
-) {
-    Row(
-        modifier              = modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        repeat(columns) { col ->
-            Column(
-                modifier            = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                notes.filterIndexed { i, _ -> i % columns == col }.forEach { note ->
-                    NoteCard(
-                        note          = note,
-                        isSelected    = selectedNotes.contains(note.id),
-                        onClick       = { onNoteClick(note) },
-                        onLongPress   = { onNoteLongPress(note) },
-                        onShowActions = { onShowActions(note) },
-                        headerStyle   = headerStyle,
-                        tilted        = true
-                    )
-                }
-            }
-        }
-    }
-}
 
 /**
  * List-mode row: a colored dot in a left gutter, threaded together by a vertical line running
@@ -198,6 +177,8 @@ private fun TimelineNoteRow(
             onLongPress   = onLongPress,
             onShowActions = onShowActions,
             headerStyle   = headerStyle,
+            tilted        = false,
+            compact       = true,
             modifier      = Modifier.weight(1f).padding(top = 3.dp, end = 8.dp, bottom = 3.dp)
         )
     }
@@ -376,51 +357,69 @@ fun NoteListScreen(
         drawerContent = {
             ModalDrawerSheet(
                 drawerContainerColor = MaterialTheme.colorScheme.surface,
-                drawerShape          = RoundedCornerShape(topEnd = 16.dp, bottomEnd = 16.dp),
-                modifier             = Modifier.width(300.dp)
+                drawerShape          = RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp),
+                modifier             = Modifier.width(310.dp)
             ) {
-                Column(Modifier.fillMaxSize().padding(16.dp)) {
-                    // ── Header: account avatar + name/email ─────────────
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(vertical = 24.dp)
+                Column(
+                    Modifier
+                        .fillMaxSize()
+                        .statusBarsPadding()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 14.dp, vertical = 12.dp)
+                ) {
+                    // ── Header: Bento Brand / Profile Card ─────────────
+                    val isDark = isAppInDarkTheme()
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = if (isDark) SakuraPinkContainerDark.copy(alpha = 0.5f) else SakuraPinkContainer.copy(alpha = 0.6f),
+                        border = BorderStroke(1.dp, SakuraPink.copy(alpha = 0.25f)),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        if (accountPhotoUrl != null) {
-                            AsyncImage(
-                                model             = accountPhotoUrl,
-                                contentDescription = null,
-                                contentScale      = ContentScale.Crop,
-                                modifier          = Modifier.size(64.dp).clip(CircleShape)
-                            )
-                        } else {
-                            Box(
-                                modifier = Modifier
-                                    .size(64.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primaryContainer),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    (account?.displayName ?: "?").take(1).uppercase(),
-                                    fontSize   = 24.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color      = MaterialTheme.colorScheme.onPrimaryContainer
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(14.dp)
+                        ) {
+                            if (accountPhotoUrl != null) {
+                                AsyncImage(
+                                    model             = accountPhotoUrl,
+                                    contentDescription = null,
+                                    contentScale      = ContentScale.Crop,
+                                    modifier          = Modifier
+                                        .size(46.dp)
+                                        .clip(CircleShape)
+                                        .border(1.5.dp, SakuraPink, CircleShape)
                                 )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .size(46.dp)
+                                        .clip(CircleShape)
+                                        .background(SakuraPink.copy(alpha = 0.18f))
+                                        .border(1.2.dp, SakuraPink.copy(alpha = 0.35f), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = if (account?.displayName != null) account.displayName!!.take(1).uppercase() else "🌸",
+                                        fontSize = 20.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = SakuraPink
+                                    )
+                                }
                             }
-                        }
-                        Spacer(Modifier.width(16.dp))
-                        Column {
-                            Text(
-                                account?.displayName ?: "Người dùng",
-                                fontSize   = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                color      = MaterialTheme.colorScheme.onSurface
-                            )
-                            if (account?.email != null) {
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
                                 Text(
-                                    account.email!!,
-                                    fontSize = 14.sp,
-                                    color    = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    text = account?.displayName ?: "Simple Notes",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = account?.email ?: "Sổ tay cá nhân & Ý tưởng",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -428,109 +427,124 @@ fun NoteListScreen(
                         }
                     }
 
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(14.dp))
 
-                    // ── Main section: Ghi chú ────────────────────────────
-                    DrawerSectionLabel("Ghi chú")
-                    DrawerNavItem(
-                        icon     = Icons.AutoMirrored.Filled.Notes,
-                        label    = "Tất cả ghi chú",
-                        count    = totalNoteCount,
-                        selected = viewingFolderId == FOLDER_ALL && !pinnedOnly && selectedLabel == null,
-                        onClick  = {
-                            viewingFolderId = FOLDER_ALL
-                            viewModel.setPinnedOnly(false)
-                            viewModel.setLabelFilter(null)
-                            scope.launch { drawerState.close() }
-                        }
-                    )
-                    val drawerUnassignedCount = remember(notes) { notes.count { it.folderId == null } }
-                    DrawerNavItem(
-                        icon     = Icons.Default.FolderOpen,
-                        label    = "Khác",
-                        count    = drawerUnassignedCount,
-                        selected = viewingFolderId == null && !pinnedOnly && selectedLabel == null,
-                        onClick  = {
-                            viewingFolderId = null
-                            viewModel.setPinnedOnly(false)
-                            viewModel.setLabelFilter(null)
-                            scope.launch { drawerState.close() }
-                        }
-                    )
-                    DrawerNavItem(
-                        icon     = Icons.Default.PushPin,
-                        label    = "Đã ghim",
-                        selected = pinnedOnly,
-                        onClick  = {
-                            viewingFolderId = null
-                            viewModel.setPinnedOnly(true)
-                            viewModel.setLabelFilter(null)
-                            scope.launch { drawerState.close() }
-                        }
-                    )
-
-                    Spacer(Modifier.height(16.dp))
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    Spacer(Modifier.height(16.dp))
-
-                    // ── Tags section: Nhãn ────────────────────────────────
-                    if (allLabels.isNotEmpty()) {
-                        DrawerSectionLabel("Nhãn")
-                        allLabels.forEachIndexed { index, label ->
-                            DrawerTagItem(
-                                color    = DRAWER_TAG_COLORS[index % DRAWER_TAG_COLORS.size],
-                                label    = "#$label",
-                                selected = selectedLabel == label,
-                                onClick  = {
-                                    viewingFolderId = null
-                                    viewModel.setPinnedOnly(false)
-                                    viewModel.setLabelFilter(label)
-                                    scope.launch { drawerState.close() }
-                                }
-                            )
-                        }
-                        Spacer(Modifier.height(16.dp))
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        Spacer(Modifier.height(16.dp))
-                    }
-
-                    // ── Folders section ───────────────────────────────────
-                    Row(
+                    // ── Scrollable middle section ──────────────────────
+                    Column(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Text(
-                            "THƯ MỤC", fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f)
-                        )
-                        DrawerCount(categories.size)
-                    }
-                    val folderTree = remember(categories) { buildFolderTree(categories) }
-                    folderTree.forEach { node ->
-                        FolderDrawerItem(
-                            node             = node,
-                            depth            = 0,
-                            categoryCounts   = categoryCounts,
-                            selectedFolderId = viewingFolderId,
-                            onFolderClick    = { id ->
-                                viewingFolderId = id
+                        DrawerSectionLabel("GHI CHÚ")
+                        DrawerNavItem(
+                            icon     = Icons.AutoMirrored.Rounded.Notes,
+                            label    = "Tất cả ghi chú",
+                            count    = totalNoteCount,
+                            selected = viewingFolderId == FOLDER_ALL && !pinnedOnly && selectedLabel == null,
+                            onClick  = {
+                                viewingFolderId = FOLDER_ALL
                                 viewModel.setPinnedOnly(false)
                                 viewModel.setLabelFilter(null)
                                 scope.launch { drawerState.close() }
                             }
                         )
+                        val pinnedCount = remember(notes) { notes.count { it.isPinned } }
+                        DrawerNavItem(
+                            icon     = Icons.Rounded.PushPin,
+                            label    = "Đã ghim",
+                            count    = pinnedCount.takeIf { it > 0 },
+                            selected = pinnedOnly,
+                            onClick  = {
+                                viewingFolderId = null
+                                viewModel.setPinnedOnly(true)
+                                viewModel.setLabelFilter(null)
+                                scope.launch { drawerState.close() }
+                            }
+                        )
+                        if (categories.isNotEmpty()) {
+                            val drawerUnassignedCount = remember(notes) { notes.count { it.folderId == null } }
+                            DrawerNavItem(
+                                icon     = Icons.Rounded.FolderOpen,
+                                label    = "Chưa phân loại",
+                                count    = drawerUnassignedCount,
+                                selected = viewingFolderId == null && !pinnedOnly && selectedLabel == null,
+                                onClick  = {
+                                    viewingFolderId = null
+                                    viewModel.setPinnedOnly(false)
+                                    viewModel.setLabelFilter(null)
+                                    scope.launch { drawerState.close() }
+                                }
+                            )
+                        }
+
+                        // ── Nhãn (Tags) section ────────────────────────
+                        if (allLabels.isNotEmpty()) {
+                            Spacer(Modifier.height(8.dp))
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                            Spacer(Modifier.height(4.dp))
+                            DrawerSectionLabel("NHÃN")
+                            allLabels.forEachIndexed { index, label ->
+                                val tagCount = remember(notes, label) { notes.count { it.labels.contains(label) } }
+                                DrawerTagItem(
+                                    color    = DRAWER_TAG_COLORS[index % DRAWER_TAG_COLORS.size],
+                                    label    = "#$label",
+                                    count    = tagCount.takeIf { it > 0 },
+                                    selected = selectedLabel == label,
+                                    onClick  = {
+                                        viewingFolderId = null
+                                        viewModel.setPinnedOnly(false)
+                                        viewModel.setLabelFilter(label)
+                                        scope.launch { drawerState.close() }
+                                    }
+                                )
+                            }
+                        }
+
+                        // ── Thư mục (Folders) section ─────────────────
+                        if (categories.isNotEmpty()) {
+                            Spacer(Modifier.height(8.dp))
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                            Spacer(Modifier.height(4.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "THƯ MỤC",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = SakuraPink,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                DrawerCount(categories.size)
+                            }
+                            val folderTree = remember(categories) { buildFolderTree(categories) }
+                            folderTree.forEach { node ->
+                                FolderDrawerItem(
+                                    node             = node,
+                                    depth            = 0,
+                                    categoryCounts   = categoryCounts,
+                                    selectedFolderId = viewingFolderId,
+                                    onFolderClick    = { id ->
+                                        viewingFolderId = id
+                                        viewModel.setPinnedOnly(false)
+                                        viewModel.setLabelFilter(null)
+                                        scope.launch { drawerState.close() }
+                                    }
+                                )
+                            }
+                        }
                     }
 
-                    Spacer(Modifier.weight(1f))
-
-                    // ── System section ────────────────────────────────────
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    Spacer(Modifier.height(16.dp))
+                    // ── System section (Pinned at Bottom) ──────────────
+                    Spacer(Modifier.height(8.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                    Spacer(Modifier.height(6.dp))
                     DrawerNavItem(
-                        icon     = Icons.Default.Delete,
+                        icon     = Icons.Rounded.DeleteOutline,
                         label    = "Thùng rác",
                         count    = deletedNotes.size.takeIf { it > 0 },
                         selected = showRecycleBin,
@@ -540,7 +554,7 @@ fun NoteListScreen(
                         }
                     )
                     DrawerNavItem(
-                        icon     = Icons.Default.Settings,
+                        icon     = Icons.Rounded.Settings,
                         label    = "Cài đặt",
                         selected = showSettings,
                         onClick  = {
@@ -566,32 +580,18 @@ fun NoteListScreen(
 
         // ── Settings overlay ─────────────────────────────────────────
         if (showSettings) {
-            Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-                Row(
-                    modifier           = Modifier.fillMaxWidth().padding(4.dp),
-                    verticalAlignment  = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = { showSettings = false }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
-                    }
-                    Text(
-                        "Settings",
-                        style    = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.padding(start = 8.dp)
-                    )
-                }
-                SettingsScreen(
-                    onThemeChange = onThemeChange,
-                    onDynamicColorChange = onDynamicColorChange,
-                    onImportNotes = { viewModel.importNotes(it) },
-                    onImportArchive = { viewModel.importArchive(it) }
-                )
-            }
+            SettingsScreen(
+                onBack               = { showSettings = false },
+                onThemeChange        = onThemeChange,
+                onDynamicColorChange = onDynamicColorChange,
+                onImportNotes        = { viewModel.importNotes(it) },
+                onImportArchive      = { viewModel.importArchive(it) }
+            )
             return@ModalNavigationDrawer
         }
 
         Scaffold(
-            containerColor = if (isSystemInDarkTheme()) SakuraBlushBgDark else SakuraBlushBg,
+            containerColor = if (isAppInDarkTheme()) SakuraBlushBgDark else SakuraBlushBg,
             bottomBar = {
                 AnimatedContent(targetState = isSelectionMode, label = "bottom_bar") { inSelect ->
                     if (inSelect) {
@@ -641,7 +641,7 @@ fun NoteListScreen(
                 Modifier
                     .padding(padding)
                     .fillMaxSize()
-                    .background(if (isSystemInDarkTheme()) SakuraBlushBgDark else SakuraBlushBg)
+                    .background(if (isAppInDarkTheme()) SakuraBlushBgDark else SakuraBlushBg)
             ) {
                 // ── Top Header: PhotoEvents Header (Sakura Brand Box + Drawer Menu + Search + Sort Pill) ──
                 val currentSortLabel = when (sortField) {
@@ -667,7 +667,7 @@ fun NoteListScreen(
                         searchFocusRequester.requestFocus()
                         keyboardController?.show()
                     }
-                    val isDark = isSystemInDarkTheme()
+                    val isDark = isAppInDarkTheme()
                     val searchBg = if (isDark) SakuraSurfaceDark else SakuraSurface
                     val searchBorder = if (isDark) SakuraBorderSoftDark else SakuraBorderSoft
 
@@ -718,27 +718,33 @@ fun NoteListScreen(
                     if (currentNotes.isEmpty()) {
                         PhotoEventsEmptyState(modifier = Modifier.align(Alignment.Center))
                     } else if (viewType == NoteViewType.GRID) {
-                        LazyColumn(
-                            modifier       = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(bottom = 80.dp)
+                        LazyVerticalStaggeredGrid(
+                            columns               = StaggeredGridCells.Fixed(2),
+                            modifier              = Modifier.fillMaxSize(),
+                            contentPadding        = PaddingValues(horizontal = 10.dp, vertical = 4.dp).let {
+                                PaddingValues(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 80.dp)
+                            },
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalItemSpacing   = 10.dp
                         ) {
-                            item {
-                                MasonryNoteGrid(
-                                    notes         = currentNotes,
-                                    selectedNotes = selectedNotes,
-                                    onNoteClick   = { note ->
+                            items(currentNotes, key = { it.id }) { note ->
+                                NoteCard(
+                                    note          = note,
+                                    isSelected    = selectedNotes.contains(note.id),
+                                    onClick       = {
                                         if (isSelectionMode) toggleSelection(note.id)
                                         else handleNoteClick(note.id)
                                     },
-                                    onNoteLongPress = { note ->
+                                    onLongPress   = {
                                         if (isSelectionMode) toggleSelection(note.id)
                                         else {
                                             view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS, HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING)
                                             enterSelectionMode(note.id)
                                         }
                                     },
-                                    onShowActions = { note -> bottomSheetNote = note },
-                                    headerStyle   = headerStyle
+                                    onShowActions = { bottomSheetNote = note },
+                                    headerStyle   = headerStyle,
+                                    tilted        = true
                                 )
                             }
                         }
@@ -813,108 +819,330 @@ fun NoteListScreen(
     }
 
     colorPickerNote?.let { note ->
+        val isDark = isAppInDarkTheme()
         AlertDialog(
             onDismissRequest = { colorPickerNote = null },
-            title   = { Text("Change color") },
-            text    = {
-                com.yourname.simplenotes.ui.editor.NoteColorPicker(
-                    selectedColor   = note.backgroundColor,
-                    onColorSelected = { color ->
-                        // updatedAt MUST bump here: cross-device sync is last-write-wins on
-                        // updatedAt (see SyncWorker), so leaving it unchanged means the color
-                        // change can silently lose to (or get overwritten by) another device.
-                        viewModel.saveNote(note.copy(backgroundColor = color, isDirty = true, updatedAt = System.currentTimeMillis()))
-                        colorPickerNote = null
-                    }
+            containerColor = if (isDark) FrostedGlassBgDark else FrostedGlassBgLight,
+            tonalElevation = 0.dp,
+            shape = RoundedCornerShape(28.dp),
+            modifier = Modifier.border(
+                BorderStroke(1.2.dp, if (isDark) FrostedGlassBorderDark else FrostedGlassBorderLight),
+                RoundedCornerShape(28.dp)
+            ),
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clip(CircleShape)
+                        .background(SakuraPink.copy(alpha = 0.12f))
+                        .border(1.dp, SakuraPink.copy(alpha = 0.25f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.Palette, null, tint = SakuraPink, modifier = Modifier.size(26.dp))
+                }
+            },
+            title = {
+                Text(
+                    text = "Đổi màu nền ghi chú",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Surface(
+                        color = Color(note.backgroundColor),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, if (isDark) Color(0x1FFFFFFF) else SakuraBorderSoft.copy(alpha = 0.6f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("🌸", fontSize = 16.sp)
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = note.title.ifBlank { "Xem trước màu ghi chú" },
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (Color(note.backgroundColor) == Color.White) Color.Black else Color.Black.copy(alpha = 0.8f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    com.yourname.simplenotes.ui.editor.NoteColorPicker(
+                        selectedColor = note.backgroundColor,
+                        onColorSelected = { color ->
+                            viewModel.saveNote(note.copy(backgroundColor = color, isDirty = true, updatedAt = System.currentTimeMillis()))
+                            colorPickerNote = null
+                        }
+                    )
+                }
+            },
             confirmButton = {
-                TextButton(onClick = { colorPickerNote = null }) { Text("Done") }
+                Button(
+                    onClick = { colorPickerNote = null },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = SakuraPink, contentColor = Color.White),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Xong", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                }
             }
         )
     }
 
     deleteConfirmNote?.let { note ->
+        val isDark = isAppInDarkTheme()
         AlertDialog(
             onDismissRequest = { deleteConfirmNote = null },
-            title   = { Text("Xóa ghi chú") },
-            text    = { Text("Bạn có chắc muốn xóa \"${note.title.ifBlank { "Ghi chú" }}\" không?") },
-            confirmButton = {
-                TextButton(onClick = {
-                    val doDelete = { viewModel.deleteNote(note.id); deleteConfirmNote = null }
-                    if (note.isLocked) {
-                        BiometricHelper.authenticateWithDeviceCredential(
-                            activity = context as FragmentActivity,
-                            title    = "Xác thực để xóa ghi chú đã khóa",
-                            onSuccess = { doDelete() },
-                            onError   = { deleteConfirmNote = null }
-                        )
-                    } else doDelete()
-                }) { Text("Xóa", color = MaterialTheme.colorScheme.error) }
+            containerColor = if (isDark) FrostedGlassBgDark else FrostedGlassBgLight,
+            tonalElevation = 0.dp,
+            shape = RoundedCornerShape(28.dp),
+            modifier = Modifier.border(
+                BorderStroke(1.2.dp, if (isDark) FrostedGlassBorderDark else FrostedGlassBorderLight),
+                RoundedCornerShape(28.dp)
+            ),
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.error.copy(alpha = 0.12f))
+                        .border(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.25f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.DeleteOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(26.dp))
+                }
             },
-            dismissButton = { TextButton(onClick = { deleteConfirmNote = null }) { Text("Hủy") } }
+            title = {
+                Text(
+                    text = "Xóa ghi chú",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            text = {
+                Text(
+                    text = "Bạn có chắc muốn chuyển ghi chú \"${note.title.ifBlank { "Ghi chú" }}\" vào thùng rác không?",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val doDelete = { viewModel.deleteNote(note.id); deleteConfirmNote = null }
+                        if (note.isLocked) {
+                            BiometricHelper.authenticateWithDeviceCredential(
+                                activity = context as FragmentActivity,
+                                title    = "Xác thực để xóa ghi chú đã khóa",
+                                onSuccess = { doDelete() },
+                                onError   = { deleteConfirmNote = null }
+                            )
+                        } else doDelete()
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = Color.White)
+                ) {
+                    Text("Xóa", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { deleteConfirmNote = null },
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, if (isDark) Color(0x2EFFFFFF) else SakuraBorderSoft)
+                ) {
+                    Text("Hủy")
+                }
+            }
         )
     }
 
     if (showBulkDeleteConfirm) {
         val hasLockedNote = selectedNotes.any { id -> notes.find { it.id == id }?.isLocked == true }
+        val isDark = isAppInDarkTheme()
         AlertDialog(
             onDismissRequest = { showBulkDeleteConfirm = false },
-            title   = { Text("Xóa ghi chú") },
-            text    = {
+            containerColor = if (isDark) FrostedGlassBgDark else FrostedGlassBgLight,
+            tonalElevation = 0.dp,
+            shape = RoundedCornerShape(28.dp),
+            modifier = Modifier.border(
+                BorderStroke(1.2.dp, if (isDark) FrostedGlassBorderDark else FrostedGlassBorderLight),
+                RoundedCornerShape(28.dp)
+            ),
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.error.copy(alpha = 0.12f))
+                        .border(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.25f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.DeleteSweep, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(26.dp))
+                }
+            },
+            title = {
                 Text(
-                    if (hasLockedNote)
-                        "Danh sách có ghi chú đã khóa. Bạn cần xác thực để xóa ${selectedNotes.size} ghi chú đã chọn."
+                    text = "Xóa ${selectedNotes.size} ghi chú",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            text = {
+                Text(
+                    text = if (hasLockedNote)
+                        "Danh sách có ghi chú đã khóa. Bạn cần xác thực để chuyển ${selectedNotes.size} ghi chú đã chọn vào thùng rác."
                     else
-                        "Bạn có chắc muốn xóa ${selectedNotes.size} ghi chú đã chọn không?"
+                        "Bạn có chắc muốn chuyển ${selectedNotes.size} ghi chú đã chọn vào thùng rác không?",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             },
             confirmButton = {
-                TextButton(onClick = {
-                    val doDelete = {
-                        viewModel.deleteNotes(selectedNotes.toList())
-                        showBulkDeleteConfirm = false
-                        exitSelectionMode()
-                    }
-                    if (hasLockedNote) {
-                        BiometricHelper.authenticateWithDeviceCredential(
-                            activity = context as FragmentActivity,
-                            title    = "Xác thực để xóa ghi chú đã khóa",
-                            onSuccess = { doDelete() },
-                            onError   = { showBulkDeleteConfirm = false }
-                        )
-                    } else doDelete()
-                }) { Text("Xóa", color = MaterialTheme.colorScheme.error) }
+                Button(
+                    onClick = {
+                        val doDelete = {
+                            viewModel.deleteNotes(selectedNotes.toList())
+                            showBulkDeleteConfirm = false
+                            exitSelectionMode()
+                        }
+                        if (hasLockedNote) {
+                            BiometricHelper.authenticateWithDeviceCredential(
+                                activity = context as FragmentActivity,
+                                title    = "Xác thực để xóa ghi chú đã khóa",
+                                onSuccess = { doDelete() },
+                                onError   = { showBulkDeleteConfirm = false }
+                            )
+                        } else doDelete()
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = Color.White)
+                ) {
+                    Text("Xóa tất cả", fontWeight = FontWeight.Bold)
+                }
             },
-            dismissButton = { TextButton(onClick = { showBulkDeleteConfirm = false }) { Text("Hủy") } }
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { showBulkDeleteConfirm = false },
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, if (isDark) Color(0x2EFFFFFF) else SakuraBorderSoft)
+                ) {
+                    Text("Hủy")
+                }
+            }
         )
     }
 
     if (showNoPasscodeDialog) {
+        val isDark = isAppInDarkTheme()
         AlertDialog(
             onDismissRequest = { showNoPasscodeDialog = false },
-            title   = { Text("Chưa có mật khẩu thiết bị") },
-            text    = { Text("Thiết bị chưa có mật khẩu màn hình khoá. Vui lòng cài đặt PIN hoặc mật khẩu trong Cài đặt.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showNoPasscodeDialog = false
-                    context.startActivity(android.content.Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS))
-                }) { Text("Đến Cài đặt") }
+            containerColor = if (isDark) FrostedGlassBgDark else FrostedGlassBgLight,
+            tonalElevation = 0.dp,
+            shape = RoundedCornerShape(28.dp),
+            modifier = Modifier.border(
+                BorderStroke(1.2.dp, if (isDark) FrostedGlassBorderDark else FrostedGlassBorderLight),
+                RoundedCornerShape(28.dp)
+            ),
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clip(CircleShape)
+                        .background(SakuraPink.copy(alpha = 0.12f))
+                        .border(1.dp, SakuraPink.copy(alpha = 0.25f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.LockReset, null, tint = SakuraPink, modifier = Modifier.size(26.dp))
+                }
             },
-            dismissButton = { TextButton(onClick = { showNoPasscodeDialog = false }) { Text("Hủy") } }
+            title = {
+                Text(
+                    text = "Chưa có mật khẩu thiết bị",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            text = {
+                Text(
+                    text = "Thiết bị chưa có mã PIN hoặc mật khẩu màn hình khoá. Vui lòng cài đặt bảo mật trong Cài đặt hệ thống để sử dụng tính năng khóa ghi chú.",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showNoPasscodeDialog = false
+                        context.startActivity(android.content.Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS))
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = SakuraPink, contentColor = Color.White)
+                ) {
+                    Text("Đến Cài đặt", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { showNoPasscodeDialog = false },
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, if (isDark) Color(0x2EFFFFFF) else SakuraBorderSoft)
+                ) {
+                    Text("Hủy")
+                }
+            }
         )
     }
 
     moveTargetNoteIds?.let { ids ->
-        // Pre-select the common folder when every target note already shares one.
         val initialFolderId = ids.mapNotNull { id -> notes.find { it.id == id }?.folderId }
             .distinct()
             .singleOrNull()
         var pickedFolderId by remember(ids) { mutableStateOf(initialFolderId) }
+        val isDark = isAppInDarkTheme()
         AlertDialog(
             onDismissRequest = { moveTargetNoteIds = null },
-            title   = { Text(if (ids.size > 1) "Chuyển ${ids.size} ghi chú vào thư mục" else "Chuyển thư mục") },
-            text    = {
+            containerColor = if (isDark) FrostedGlassBgDark else FrostedGlassBgLight,
+            tonalElevation = 0.dp,
+            shape = RoundedCornerShape(28.dp),
+            modifier = Modifier.border(
+                BorderStroke(1.2.dp, if (isDark) FrostedGlassBorderDark else FrostedGlassBorderLight),
+                RoundedCornerShape(28.dp)
+            ),
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clip(CircleShape)
+                        .background(SakuraPink.copy(alpha = 0.12f))
+                        .border(1.dp, SakuraPink.copy(alpha = 0.25f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.DriveFileMove, null, tint = SakuraPink, modifier = Modifier.size(26.dp))
+                }
+            },
+            title = {
+                Text(
+                    text = if (ids.size > 1) "Chuyển ${ids.size} ghi chú vào thư mục" else "Chuyển vào thư mục",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            text = {
                 Column {
                     com.yourname.simplenotes.ui.folder.FolderBrowser(
                         folders          = categories,
@@ -926,14 +1154,26 @@ fun NoteListScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
-                    viewModel.moveNotes(ids, pickedFolderId)
-                    moveTargetNoteIds = null
-                    if (ids.size > 1) exitSelectionMode()
-                }) { Text("Chuyển") }
+                Button(
+                    onClick = {
+                        viewModel.moveNotes(ids, pickedFolderId)
+                        moveTargetNoteIds = null
+                        if (ids.size > 1) exitSelectionMode()
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = SakuraPink, contentColor = Color.White)
+                ) {
+                    Text("Chuyển", fontWeight = FontWeight.Bold)
+                }
             },
             dismissButton = {
-                TextButton(onClick = { moveTargetNoteIds = null }) { Text("Hủy") }
+                OutlinedButton(
+                    onClick = { moveTargetNoteIds = null },
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, if (isDark) Color(0x2EFFFFFF) else SakuraBorderSoft)
+                ) {
+                    Text("Hủy")
+                }
             }
         )
     }
@@ -967,22 +1207,69 @@ fun NoteListScreen(
     }
 
     folderToDelete?.let { folder ->
+        val isDark = isAppInDarkTheme()
         AlertDialog(
             onDismissRequest = { folderToDelete = null },
-            title   = { Text("Xóa danh mục") },
-            text    = { Text("Bạn có chắc muốn xóa \"${folder.name}\" không? Các ghi chú bên trong sẽ được chuyển về \"Khác\".") },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.deleteFolder(folder.id)
-                    if (viewingFolderId == folder.id) {
-                        viewingFolderId = null
-                        isSelectionMode = false
-                        selectedNotes = emptySet()
-                    }
-                    folderToDelete = null
-                }) { Text("Xóa", color = MaterialTheme.colorScheme.error) }
+            containerColor = if (isDark) FrostedGlassBgDark else FrostedGlassBgLight,
+            tonalElevation = 0.dp,
+            shape = RoundedCornerShape(28.dp),
+            modifier = Modifier.border(
+                BorderStroke(1.2.dp, if (isDark) FrostedGlassBorderDark else FrostedGlassBorderLight),
+                RoundedCornerShape(28.dp)
+            ),
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.error.copy(alpha = 0.12f))
+                        .border(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.25f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.DeleteOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(26.dp))
+                }
             },
-            dismissButton = { TextButton(onClick = { folderToDelete = null }) { Text("Hủy") } }
+            title = {
+                Text(
+                    text = "Xóa thư mục",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            text = {
+                Text(
+                    text = "Bạn có chắc muốn xóa thư mục \"${folder.name}\" không? Các ghi chú bên trong vẫn được giữ lại và chuyển về mục chưa phân loại.",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteFolder(folder.id)
+                        if (viewingFolderId == folder.id) {
+                            viewingFolderId = null
+                            isSelectionMode = false
+                            selectedNotes = emptySet()
+                        }
+                        folderToDelete = null
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = Color.White)
+                ) {
+                    Text("Xóa", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { folderToDelete = null },
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, if (isDark) Color(0x2EFFFFFF) else SakuraBorderSoft)
+                ) {
+                    Text("Hủy")
+                }
+            }
         )
     }
 
@@ -1336,28 +1623,73 @@ private fun CreateFolderDialog(
 ) {
     var name by remember { mutableStateOf("") }
     var selectedColor by remember { mutableStateOf(FOLDER_COLOR_PALETTE.first()) }
+    val isDark = isAppInDarkTheme()
     AlertDialog(
         onDismissRequest = onDismiss,
-        title   = { Text("Create Folder") },
-        text    = {
+        containerColor = if (isDark) FrostedGlassBgDark else FrostedGlassBgLight,
+        tonalElevation = 0.dp,
+        shape = RoundedCornerShape(28.dp),
+        modifier = Modifier.border(
+            BorderStroke(1.2.dp, if (isDark) FrostedGlassBorderDark else FrostedGlassBorderLight),
+            RoundedCornerShape(28.dp)
+        ),
+        icon = {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(52.dp)
+                    .background(SakuraPink.copy(alpha = 0.12f), CircleShape)
+                    .border(1.dp, SakuraPink.copy(alpha = 0.25f), CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Folder,
+                    contentDescription = null,
+                    tint = SakuraPink,
+                    modifier = Modifier.size(26.dp)
+                )
+            }
+        },
+        title = {
+            Text(
+                "Tạo thư mục mới",
+                fontWeight = FontWeight.Bold,
+                color = SakuraPink
+            )
+        },
+        text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
-                    value         = name,
+                    value = name,
                     onValueChange = { name = it },
-                    label         = { Text("Name") },
-                    singleLine    = true,
-                    modifier      = Modifier.fillMaxWidth()
+                    label = { Text("Tên thư mục") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                )
+                Text(
+                    "Màu thư mục",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = SakuraPink
                 )
                 FolderColorPicker(selectedColor = selectedColor, onColorSelected = { selectedColor = it })
             }
         },
         confirmButton = {
-            TextButton(
-                onClick  = { if (name.isNotBlank()) onConfirm(name, selectedColor) },
-                enabled  = name.isNotBlank()
-            ) { Text("Save") }
+            Button(
+                onClick = { if (name.isNotBlank()) onConfirm(name.trim(), selectedColor) },
+                enabled = name.isNotBlank(),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = SakuraPink)
+            ) { Text("Lưu", fontWeight = FontWeight.Bold) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = {
+            OutlinedButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, if (isDark) Color(0x2EFFFFFF) else SakuraBorderSoft)
+            ) { Text("Hủy") }
+        }
     )
 }
 
@@ -1371,37 +1703,79 @@ private fun EditFolderDialog(
 ) {
     var name by remember { mutableStateOf(folder.name) }
     var selectedColor by remember { mutableStateOf(folder.colorArgb) }
+    val isDark = isAppInDarkTheme()
     AlertDialog(
         onDismissRequest = onDismiss,
-        title   = { Text("Edit Folder") },
-        text    = {
+        containerColor = if (isDark) FrostedGlassBgDark else FrostedGlassBgLight,
+        tonalElevation = 0.dp,
+        shape = RoundedCornerShape(28.dp),
+        modifier = Modifier.border(
+            BorderStroke(1.2.dp, if (isDark) FrostedGlassBorderDark else FrostedGlassBorderLight),
+            RoundedCornerShape(28.dp)
+        ),
+        icon = {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(52.dp)
+                    .background(SakuraPink.copy(alpha = 0.12f), CircleShape)
+                    .border(1.dp, SakuraPink.copy(alpha = 0.25f), CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Folder,
+                    contentDescription = null,
+                    tint = SakuraPink,
+                    modifier = Modifier.size(26.dp)
+                )
+            }
+        },
+        title = {
+            Text(
+                "Chỉnh sửa thư mục",
+                fontWeight = FontWeight.Bold,
+                color = SakuraPink
+            )
+        },
+        text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
-                    value         = name,
+                    value = name,
                     onValueChange = { name = it },
-                    label         = { Text("Name") },
-                    singleLine    = true,
-                    modifier      = Modifier.fillMaxWidth()
+                    label = { Text("Tên thư mục") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
                 )
                 Text(
                     "Màu thư mục",
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontWeight = FontWeight.SemiBold,
+                    color = SakuraPink
                 )
                 FolderColorPicker(selectedColor = selectedColor, onColorSelected = { selectedColor = it })
                 TextButton(
-                    onClick  = onDelete,
+                    onClick = onDelete,
                     modifier = Modifier.align(Alignment.Start)
-                ) { Text("Xóa thư mục", color = MaterialTheme.colorScheme.error) }
+                ) {
+                    Text("Xóa thư mục", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                }
             }
         },
         confirmButton = {
-            TextButton(
-                onClick  = { if (name.isNotBlank()) onSave(name, selectedColor) },
-                enabled  = name.isNotBlank()
-            ) { Text("Save") }
+            Button(
+                onClick = { if (name.isNotBlank()) onSave(name.trim(), selectedColor) },
+                enabled = name.isNotBlank(),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = SakuraPink)
+            ) { Text("Lưu", fontWeight = FontWeight.Bold) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = {
+            OutlinedButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, if (isDark) Color(0x2EFFFFFF) else SakuraBorderSoft)
+            ) { Text("Hủy") }
+        }
     )
 }
 
@@ -1436,14 +1810,14 @@ private val DRAWER_TAG_COLORS = listOf(
 private fun DrawerSectionLabel(text: String) {
     Text(
         text,
-        fontSize   = 12.sp,
+        fontSize   = 11.sp,
         fontWeight = FontWeight.Bold,
-        color      = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier   = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+        color      = SakuraPink,
+        modifier   = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
     )
 }
 
-/** Pill-shaped nav row for the drawer with frosted acrylic styling. */
+/** Bento-styled nav row for the drawer with Sakura accents and soft rounded icons. */
 @Composable
 private fun DrawerNavItem(
     icon: ImageVector,
@@ -1452,82 +1826,147 @@ private fun DrawerNavItem(
     count: Int? = null,
     onClick: () -> Unit
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = isAppInDarkTheme()
     val bg = if (selected) {
-        if (isDark) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-        else MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+        if (isDark) SakuraPink.copy(alpha = 0.18f)
+        else SakuraPink.copy(alpha = 0.12f)
     } else Color.Transparent
     val border = if (selected) {
-        if (isDark) MaterialTheme.colorScheme.primary.copy(alpha = 0.40f)
-        else MaterialTheme.colorScheme.primary.copy(alpha = 0.30f)
+        if (isDark) SakuraPink.copy(alpha = 0.40f)
+        else SakuraPink.copy(alpha = 0.30f)
     } else Color.Transparent
-    val content = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+    val content = if (selected) SakuraPink else MaterialTheme.colorScheme.onSurface
+    val iconBg = if (selected) {
+        SakuraPink.copy(alpha = 0.22f)
+    } else {
+        if (isDark) Color(0x22FFFFFF) else SakuraPink.copy(alpha = 0.08f)
+    }
+    val iconTint = if (selected) {
+        SakuraPink
+    } else {
+        if (isDark) Color(0xFFE2D6DC) else SakuraPink.copy(alpha = 0.85f)
+    }
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .height(52.dp)
-            .clip(RoundedCornerShape(18.dp))
+            .height(48.dp)
+            .clip(RoundedCornerShape(16.dp))
             .background(bg)
-            .then(if (selected) Modifier.border(1.dp, border, RoundedCornerShape(18.dp)) else Modifier)
+            .then(if (selected) Modifier.border(1.dp, border, RoundedCornerShape(16.dp)) else Modifier)
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = 10.dp)
     ) {
-        Icon(icon, null, tint = content, modifier = Modifier.size(22.dp))
-        Spacer(Modifier.width(16.dp))
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(CircleShape)
+                .background(iconBg)
+                .then(
+                    if (selected) Modifier.border(1.dp, SakuraPink.copy(alpha = 0.35f), CircleShape)
+                    else Modifier
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, null, tint = iconTint, modifier = Modifier.size(18.dp))
+        }
+        Spacer(Modifier.width(12.dp))
         Text(
-            label, fontSize = 15.sp,
+            label, fontSize = 14.sp,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-            color = content, modifier = Modifier.weight(1f)
+            color = content, modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
         if (count != null) {
-            DrawerCount(count)
+            DrawerCount(count = count, isSelected = selected)
         }
     }
 }
 
-/** Right-aligned count label shared by all drawer rows so digits line up regardless of row type or digit count. */
+/** Right-aligned count pill shared by all drawer rows. */
 @Composable
-private fun DrawerCount(count: Int) {
-    Text(
-        "$count",
-        fontSize = 12.sp,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.widthIn(min = 20.dp),
-        textAlign = TextAlign.End
-    )
+private fun DrawerCount(count: Int, isSelected: Boolean = false) {
+    val isDark = isAppInDarkTheme()
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(
+                if (isSelected) SakuraPink.copy(alpha = 0.22f)
+                else if (isDark) Color(0x22FFFFFF)
+                else SakuraPink.copy(alpha = 0.08f)
+            )
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+    ) {
+        Text(
+            "$count",
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = if (isSelected) SakuraPink else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
 }
 
-/** Colored-dot row for a label/tag filter shortcut in the drawer. */
+/** Soft rounded tag row for a label filter shortcut in the drawer. */
 @Composable
-private fun DrawerTagItem(color: Color, label: String, selected: Boolean, onClick: () -> Unit) {
-    val isDark = isSystemInDarkTheme()
+private fun DrawerTagItem(
+    color: Color,
+    label: String,
+    selected: Boolean,
+    count: Int? = null,
+    onClick: () -> Unit
+) {
+    val isDark = isAppInDarkTheme()
     val bg = if (selected) {
         if (isDark) color.copy(alpha = 0.18f)
         else color.copy(alpha = 0.12f)
     } else Color.Transparent
     val border = if (selected) color.copy(alpha = 0.40f) else Color.Transparent
     val content = if (selected) color else MaterialTheme.colorScheme.onSurface
+    val iconBg = if (selected) color.copy(alpha = 0.24f) else color.copy(alpha = 0.12f)
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .height(44.dp)
+            .height(46.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(bg)
             .then(if (selected) Modifier.border(1.dp, border, RoundedCornerShape(16.dp)) else Modifier)
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = 10.dp)
     ) {
-        Box(Modifier.size(10.dp).clip(CircleShape).background(color))
-        Spacer(Modifier.width(16.dp))
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(CircleShape)
+                .background(iconBg)
+                .then(
+                    if (selected) Modifier.border(1.dp, color.copy(alpha = 0.40f), CircleShape)
+                    else Modifier
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.LocalOffer,
+                contentDescription = null,
+                tint = color,
+                modifier = Modifier.size(16.dp)
+            )
+        }
+        Spacer(Modifier.width(12.dp))
         Text(
             label, fontSize = 14.sp,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-            color = content
+            color = content,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
+        if (count != null) {
+            DrawerCount(count = count, isSelected = selected)
+        }
     }
 }
 
@@ -1542,17 +1981,18 @@ private fun FolderDrawerItem(
     val isSelected = selectedFolderId == node.category.id
     val count = categoryCounts[node.category.id] ?: 0
     val categoryColor = Color(node.category.colorArgb)
-    val isDark = isSystemInDarkTheme()
+    val isDark = isAppInDarkTheme()
     val bg = if (isSelected) {
         if (isDark) categoryColor.copy(alpha = 0.18f)
         else categoryColor.copy(alpha = 0.12f)
     } else Color.Transparent
     val border = if (isSelected) categoryColor.copy(alpha = 0.40f) else Color.Transparent
+    val iconBg = if (isSelected) categoryColor.copy(alpha = 0.24f) else categoryColor.copy(alpha = 0.12f)
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 2.dp)
+            .padding(vertical = 1.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(bg)
             .then(if (isSelected) Modifier.border(1.dp, border, RoundedCornerShape(16.dp)) else Modifier)
@@ -1562,30 +2002,45 @@ private fun FolderDrawerItem(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(
-                    start = 16.dp + (depth * 14).dp,
-                    end = 16.dp,
-                    top = 10.dp,
-                    bottom = 10.dp
+                    start = 10.dp + (depth * 14).dp,
+                    end = 10.dp,
+                    top = 5.dp,
+                    bottom = 5.dp
                 ),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                Icons.Default.Folder, null,
-                tint     = categoryColor,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(Modifier.width(14.dp))
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(CircleShape)
+                .background(iconBg)
+                .then(
+                    if (isSelected) Modifier.border(1.dp, categoryColor.copy(alpha = 0.40f), CircleShape)
+                    else Modifier
+                ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Folder,
+                    contentDescription = null,
+                    tint = categoryColor,
+                    modifier = Modifier.size(17.dp)
+                )
+            }
+            Spacer(Modifier.width(12.dp))
             Text(
                 node.category.name,
                 fontSize = 14.sp,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                 modifier = Modifier.weight(1f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                color = if (isSelected) (if (isDark) categoryColor else MaterialTheme.colorScheme.primary)
+                color = if (isSelected) (if (isDark) categoryColor else SakuraPink)
                         else MaterialTheme.colorScheme.onSurface
             )
-            DrawerCount(count)
+            if (count > 0) {
+                DrawerCount(count = count, isSelected = isSelected)
+            }
         }
     }
     node.children.forEach { child ->

@@ -50,6 +50,13 @@ val SakuraTextPrimaryDark    = Color(0xFFFFF0F5)
 val SakuraTextSecondaryDark  = Color(0xFFCBB4C5)
 val SakuraPinkContainerDark  = Color(0xFF3F1D2B)
 
+// ── Frosted Glass ("Mờ sương") Dialog Palette ───────────────────────
+val FrostedGlassBgLight           = Color(0xF8FFFBFD) // 97% luminous frosted blush white
+val FrostedGlassBgDark            = Color(0xF4201622) // 95% deep plum-slate frosted acrylic
+val FrostedGlassTileLight         = Color(0xB3FFFFFF) // 70% frosted translucent white tile
+val FrostedGlassTileDark          = Color(0x1AFFFFFF) // 10% frosted tile for dark mode
+val FrostedGlassBorderLight       = Color(0xE6FFFFFF) // Crisp bright glass reflection edge (90% white)
+val FrostedGlassBorderDark        = Color(0x2EFFFFFF) // Subtle edge for dark mode
 
 // Backward-compatible aliases for existing references
 val DeskWalnut         = GlassObsidianBg

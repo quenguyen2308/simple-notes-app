@@ -351,7 +351,7 @@ class DriveDataSource(private val authManager: DriveAuthManager) {
                 themeMode = obj.optString("themeMode", "system"),
                 notificationsEnabled = obj.optBoolean("notificationsEnabled", true),
                 dynamicColorEnabled = obj.optBoolean("dynamicColorEnabled", true),
-                noteViewType = obj.optString("noteViewType", "LIST"),
+                noteViewType = obj.optString("noteViewType", "GRID"),
                 autoSaveEnabled = obj.optBoolean("autoSaveEnabled", true),
                 noteLockMethod = obj.optString("noteLockMethod", "biometric"),
                 defaultNoteBackground = obj.optInt("defaultNoteBackground", 0xFFFFFFFF.toInt()),

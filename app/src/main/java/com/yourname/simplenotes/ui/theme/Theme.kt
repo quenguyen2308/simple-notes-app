@@ -8,7 +8,10 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 
 private val DarkColorScheme = darkColorScheme(
@@ -53,6 +56,19 @@ private val LightColorScheme = lightColorScheme(
     outlineVariant       = GlassBorderLight
 )
 
+val LocalThemeIsDark = compositionLocalOf<Boolean?> { null }
+
+/**
+ * Returns true if the app is currently displaying in dark theme.
+ * Checks the active LocalThemeIsDark (or MaterialTheme surface luminance as fallback)
+ * so it accurately reflects user in-app choice ("dark" / "light" / "system")
+ * rather than only the Android OS system setting.
+ */
+@Composable
+fun isAppInDarkTheme(): Boolean {
+    return LocalThemeIsDark.current ?: (MaterialTheme.colorScheme.surface.luminance() < 0.5f)
+}
+
 /** Material You dynamic color is only available on Android 12+ (API 31). */
 val isDynamicColorAvailable: Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
@@ -70,5 +86,7 @@ fun SimpleNotesTheme(
         else      -> LightColorScheme
     }
 
-    MaterialTheme(colorScheme = colorScheme, content = content)
+    CompositionLocalProvider(LocalThemeIsDark provides darkTheme) {
+        MaterialTheme(colorScheme = colorScheme, content = content)
+    }
 }

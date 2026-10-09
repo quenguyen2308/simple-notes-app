@@ -43,6 +43,7 @@ import com.yourname.simplenotes.ui.theme.DeskCoral
 import com.yourname.simplenotes.ui.theme.DeskCoralDark
 import com.yourname.simplenotes.ui.theme.DeskSage
 import com.yourname.simplenotes.ui.theme.HeaderStyle
+import com.yourname.simplenotes.ui.theme.isAppInDarkTheme
 
 /** Renders the note-list title/subtitle block per [style] — the "Bàn Làm Việc" default,
  *  or one of the playful alternates picked in Settings. */
@@ -89,7 +90,7 @@ fun StyledIconButton(
     size: Dp = 38.dp,
     iconSize: Dp = 20.dp
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = isAppInDarkTheme()
     val bg = if (isDark) Color.White.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)
     val border = if (isDark) Color.White.copy(alpha = 0.12f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
     val iconTint = styledIconTint(style, default = MaterialTheme.colorScheme.onSurface)
@@ -122,7 +123,7 @@ fun StyledIconButton(
 
 @Composable
 private fun DefaultHeader(title: String, subtitle: String) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = isAppInDarkTheme()
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             text = title,
@@ -161,7 +162,7 @@ private fun DefaultHeader(title: String, subtitle: String) {
 
 @Composable
 private fun DefaultFab(onClick: () -> Unit) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = isAppInDarkTheme()
     val glowColor = if (isDark) Color(0xFF818CF8).copy(alpha = 0.40f) else Color(0xFFEC4899).copy(alpha = 0.35f)
     val gradient = Brush.linearGradient(
         listOf(

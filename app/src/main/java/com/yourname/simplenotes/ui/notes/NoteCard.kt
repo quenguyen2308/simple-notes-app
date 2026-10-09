@@ -63,6 +63,7 @@ import coil.compose.AsyncImage
 import com.yourname.simplenotes.data.local.entities.ContentBlock
 import com.yourname.simplenotes.domain.model.Note
 import com.yourname.simplenotes.ui.theme.HeaderStyle
+import com.yourname.simplenotes.ui.theme.isAppInDarkTheme
 import com.yourname.simplenotes.util.HtmlSpannableConverter
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -94,7 +95,8 @@ fun NoteCard(
     /** "Bàn Làm Việc" sticky-note look: a small stable per-note tilt plus a flat, hard-edged
      *  paper shadow instead of Material's soft blurred elevation. */
     tilted: Boolean = false,
-    headerStyle: HeaderStyle = HeaderStyle.DEFAULT
+    headerStyle: HeaderStyle = HeaderStyle.DEFAULT,
+    compact: Boolean = false
 ) {
     val dateText = remember(note.contentUpdatedAt) { formatCardDate(note.contentUpdatedAt) }
 
@@ -109,7 +111,7 @@ fun NoteCard(
         }
     }
 
-    val isDark = isSystemInDarkTheme()
+    val isDark = isAppInDarkTheme()
 
     val noteBackgroundColor = remember(note.backgroundColor) {
         val argb = note.backgroundColor
@@ -215,7 +217,7 @@ fun NoteCard(
         Card(
             modifier  = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 80.dp)
+                .then(if (compact) Modifier else Modifier.heightIn(min = 80.dp))
                 .then(
                     if (isSelected) {
                         Modifier.border(2.dp, onCardAccent, RoundedCornerShape(18.dp))
@@ -237,7 +239,114 @@ fun NoteCard(
             )
         ) {
             Box {
-                Column(modifier = Modifier.padding(10.dp).fillMaxWidth()) {
+                if (compact) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (isSelected) {
+                            Icon(
+                                Icons.Default.CheckCircle, "Selected",
+                                tint     = onCardAccent,
+                                modifier = Modifier.size(18.dp).padding(end = 6.dp)
+                            )
+                        }
+
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = if (thumbnailUri != null) 10.dp else 4.dp)
+                        ) {
+                            Text(
+                                text       = note.title.ifBlank { "Untitled" },
+                                fontWeight = FontWeight.Bold,
+                                fontSize   = 15.sp,
+                                maxLines   = 1,
+                                overflow   = TextOverflow.Ellipsis,
+                                color      = onCard
+                            )
+                            Spacer(Modifier.height(3.dp))
+
+                            if (note.isLocked) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Lock, null, tint = onCardAccent, modifier = Modifier.size(12.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Đã khóa", fontSize = 12.sp, color = onCardVariant)
+                                }
+                            } else if (checklistItems.isNotEmpty()) {
+                                val completedCount = checklistItems.count { it.isCompleted }
+                                Text(
+                                    text = "☑ $completedCount/${checklistItems.size} việc đã hoàn thành",
+                                    fontSize = 12.5.sp,
+                                    color = onCardVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            } else if (note.content.isNotBlank()) {
+                                Text(
+                                    text = previewText,
+                                    fontSize = 12.5.sp,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = onCardVariant,
+                                    lineHeight = 16.sp
+                                )
+                            }
+
+                            Spacer(Modifier.height(5.dp))
+
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (note.labels.isNotEmpty()) {
+                                    val pillBg = if (isDark) accentColor.copy(alpha = 0.22f)
+                                                 else if (noteBackgroundColor != null) noteBackgroundColor.darken(0.28f)
+                                                 else primaryColor
+                                    val pillTextColor = if (isDark) accentColor else Color.White
+                                    note.labels.take(2).forEach { label ->
+                                        Box(
+                                            modifier = Modifier
+                                                .padding(end = 4.dp)
+                                                .background(pillBg, RoundedCornerShape(50))
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(text = label, fontSize = 10.sp, color = pillTextColor, maxLines = 1)
+                                        }
+                                    }
+                                }
+                                Text(
+                                    text     = dateText,
+                                    fontSize = 11.5.sp,
+                                    color    = onCardVariant
+                                )
+                            }
+                        }
+
+                        if (thumbnailUri != null) {
+                            AsyncImage(
+                                model             = thumbnailUri,
+                                contentDescription = null,
+                                contentScale      = ContentScale.Crop,
+                                modifier          = Modifier
+                                    .size(56.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                            )
+                            Spacer(Modifier.width(6.dp))
+                        }
+
+                        IconButton(
+                            onClick  = onShowActions,
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.MoreVert, "More",
+                                modifier = Modifier.size(15.dp),
+                                tint     = styledIconTint(headerStyle, default = onCardVariant)
+                            )
+                        }
+                    }
+                } else {
+                    Column(modifier = Modifier.padding(10.dp).fillMaxWidth()) {
                     // ── Thumbnail (first attached image, if any) ──────
                     if (thumbnailUri != null) {
                         AsyncImage(
@@ -351,13 +460,29 @@ fun NoteCard(
                 }
 
                 // ── ⋮ button overlay (top-right) ────────────────────
-                IconButton(
-                    onClick  = onShowActions,
-                    modifier = Modifier.size(28.dp).align(Alignment.TopEnd)
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 4.dp, end = 4.dp)
                 ) {
-                    Icon(Icons.Default.MoreVert, "More",
-                        modifier = Modifier.size(14.dp),
-                        tint     = styledIconTint(headerStyle, default = onCardVariant))
+                    if (thumbnailUri != null) {
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.38f))
+                        )
+                    }
+                    IconButton(
+                        onClick  = onShowActions,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.MoreVert, "More",
+                            modifier = Modifier.size(15.dp),
+                            tint     = if (thumbnailUri != null) Color.White else styledIconTint(headerStyle, default = onCardVariant)
+                        )
+                    }
                 }
 
                 // ── Selection indicator (top-left) ───────────────────
@@ -367,6 +492,7 @@ fun NoteCard(
                         tint     = onCardAccent,
                         modifier = Modifier.size(18.dp).align(Alignment.TopStart).padding(start = 6.dp, top = 6.dp)
                     )
+                }
                 }
             }
         }
@@ -401,7 +527,8 @@ fun AnimatedNoteCard(
     onShowActions: () -> Unit = {},
     isVisible: Boolean = true,
     modifier: Modifier = Modifier,
-    tilted: Boolean = false
+    tilted: Boolean = false,
+    compact: Boolean = false
 ) {
     AnimatedVisibility(
         visible = isVisible,
@@ -415,7 +542,8 @@ fun AnimatedNoteCard(
             onClick       = onClick,
             onShowActions = onShowActions,
             modifier      = modifier,
-            tilted        = tilted
+            tilted        = tilted,
+            compact       = compact
         )
     }
 }

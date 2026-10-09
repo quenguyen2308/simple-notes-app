@@ -2,13 +2,23 @@ package com.yourname.simplenotes.ui.editor
 
 import android.text.Spannable
 import android.widget.EditText
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.ui.text.font.FontWeight
+import com.yourname.simplenotes.ui.theme.FrostedGlassBgDark
+import com.yourname.simplenotes.ui.theme.FrostedGlassBgLight
+import com.yourname.simplenotes.ui.theme.FrostedGlassBorderDark
+import com.yourname.simplenotes.ui.theme.FrostedGlassBorderLight
+import com.yourname.simplenotes.ui.theme.SakuraPink
+import com.yourname.simplenotes.ui.theme.isAppInDarkTheme
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
@@ -234,22 +244,61 @@ fun EditorToolbar(
 @Composable
 private fun LinkInputDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
     var url by remember { mutableStateOf("https://") }
+    val isDark = isAppInDarkTheme()
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Thêm liên kết") },
+        containerColor = if (isDark) FrostedGlassBgDark else FrostedGlassBgLight,
+        tonalElevation = 0.dp,
+        shape = RoundedCornerShape(28.dp),
+        modifier = Modifier.border(
+            BorderStroke(1.2.dp, if (isDark) FrostedGlassBorderDark else FrostedGlassBorderLight),
+            RoundedCornerShape(28.dp)
+        ),
+        icon = {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(52.dp)
+                    .background(SakuraPink.copy(alpha = 0.14f), CircleShape)
+                    .border(1.dp, SakuraPink.copy(alpha = 0.25f), CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Link,
+                    contentDescription = null,
+                    tint = SakuraPink,
+                    modifier = Modifier.size(26.dp)
+                )
+            }
+        },
+        title = {
+            Text("Thêm liên kết", fontWeight = FontWeight.Bold, color = SakuraPink)
+        },
         text = {
             OutlinedTextField(
                 value = url,
                 onValueChange = { url = it },
+                label = { Text("Đường dẫn URL") },
                 singleLine = true,
                 placeholder = { Text("https://example.com") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp)
             )
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(url.trim()) }, enabled = url.isNotBlank()) { Text("Thêm") }
+            Button(
+                onClick = { onConfirm(url.trim()) },
+                enabled = url.isNotBlank(),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = SakuraPink)
+            ) { Text("Thêm", fontWeight = FontWeight.Bold) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Hủy") } }
+        dismissButton = {
+            OutlinedButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(14.dp)
+            ) { Text("Hủy") }
+        }
     )
 }
 
@@ -310,9 +359,35 @@ private fun ColorPickerDialog(
     onColorSelected: (Color) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val isDark = isAppInDarkTheme()
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(title) },
+        containerColor = if (isDark) FrostedGlassBgDark else FrostedGlassBgLight,
+        tonalElevation = 0.dp,
+        shape = RoundedCornerShape(28.dp),
+        modifier = Modifier.border(
+            BorderStroke(1.2.dp, if (isDark) FrostedGlassBorderDark else FrostedGlassBorderLight),
+            RoundedCornerShape(28.dp)
+        ),
+        icon = {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(52.dp)
+                    .background(SakuraPink.copy(alpha = 0.14f), CircleShape)
+                    .border(1.dp, SakuraPink.copy(alpha = 0.25f), CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Palette,
+                    contentDescription = null,
+                    tint = SakuraPink,
+                    modifier = Modifier.size(26.dp)
+                )
+            }
+        },
+        title = {
+            Text(title, fontWeight = FontWeight.Bold, color = SakuraPink)
+        },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 COLOR_SWATCHES.chunked(6).forEach { row ->
@@ -326,8 +401,8 @@ private fun ColorPickerDialog(
                                     .clip(CircleShape)
                                     .background(color)
                                     .border(
-                                        if (isSelected) 2.dp else 1.dp,
-                                        if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFFDDDDDD),
+                                        if (isSelected) 2.5.dp else 1.dp,
+                                        if (isSelected) SakuraPink else Color(0xFFDDDDDD),
                                         CircleShape
                                     )
                                     .clickable { onColorSelected(color) }
@@ -346,6 +421,12 @@ private fun ColorPickerDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Xong") } }
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = SakuraPink)
+            ) { Text("Xong", fontWeight = FontWeight.Bold) }
+        }
     )
 }

@@ -1,5 +1,6 @@
 package com.yourname.simplenotes.ui.search
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -44,14 +46,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yourname.simplenotes.domain.model.SearchResult
+import com.yourname.simplenotes.ui.theme.SakuraPink
 import org.koin.androidx.compose.koinViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -83,7 +88,7 @@ fun SearchScreen(
                     TextField(
                         value = query,
                         onValueChange = { query = it; viewModel.search(it) },
-                        placeholder = { Text("Search notes...") },
+                        placeholder = { Text("Tìm kiếm ghi chú...") },
                         singleLine = true,
                         colors = TextFieldDefaults.colors(
                             focusedContainerColor = Color.Transparent,
@@ -94,7 +99,7 @@ fun SearchScreen(
                         trailingIcon = {
                             if (query.isNotEmpty()) {
                                 IconButton(onClick = { query = ""; viewModel.search("") }) {
-                                    Icon(Icons.Default.Clear, contentDescription = "Clear")
+                                    Icon(Icons.Default.Clear, contentDescription = "Xóa")
                                 }
                             }
                         },
@@ -115,7 +120,7 @@ fun SearchScreen(
                 ) {
                     FilterChip(selected = selectedFolderId == null,
                         onClick = { viewModel.setFolderFilter(null) },
-                        label = { Text("All") })
+                        label = { Text("Tất cả") })
                     categories.forEach { cat ->
                         FilterChip(
                             selected = selectedFolderId == cat.id,
@@ -134,15 +139,15 @@ fun SearchScreen(
                     onClearAll = viewModel::clearHistory
                 )
                 isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
+                    CircularProgressIndicator(color = com.yourname.simplenotes.ui.theme.SakuraPink)
                 }
                 results.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No results for \"$query\"",
+                    Text("Không tìm thấy ghi chú nào cho \"$query\"",
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 else -> LazyColumn(
-                    contentPadding = PaddingValues(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    contentPadding = PaddingValues(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(results, key = { it.note.id }) { result ->
                         SearchResultCard(result = result, onNoteClick = onNoteClick)
@@ -167,9 +172,9 @@ private fun SearchHistorySection(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Recent Searches", style = MaterialTheme.typography.labelMedium,
+            Text("Tìm kiếm gần đây", style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-            TextButton(onClick = onClearAll) { Text("Clear all") }
+            TextButton(onClick = onClearAll) { Text("Xóa lịch sử", color = com.yourname.simplenotes.ui.theme.SakuraPink) }
         }
         history.forEach { q ->
             Row(
@@ -191,27 +196,77 @@ private fun SearchHistorySection(
 
 @Composable
 private fun SearchResultCard(result: SearchResult, onNoteClick: (String) -> Unit) {
+    val note = result.note
+    val noteColor = remember(note.backgroundColor) {
+        val argb = note.backgroundColor
+        if (argb == 0xFFFFFFFF.toInt() || argb == 0) null else Color(argb)
+    }
+    val cardBorder = noteColor ?: MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+
     Card(
-        modifier = Modifier.fillMaxWidth().clickable { onNoteClick(result.note.id) },
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onNoteClick(result.note.id) },
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        border = androidx.compose.foundation.BorderStroke(1.dp, cardBorder.copy(alpha = 0.4f)),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-        Column(Modifier.padding(12.dp)) {
-            Text(
-                result.note.title.ifBlank { "Untitled" },
-                fontWeight = FontWeight.SemiBold,
-                style = MaterialTheme.typography.bodyLarge,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            if (result.matchedText.isNotBlank()) {
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    result.matchedText,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (noteColor != null) {
+                Box(
+                    modifier = Modifier
+                        .size(width = 4.dp, height = 36.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(noteColor)
                 )
+                Spacer(Modifier.width(10.dp))
+            }
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (note.isPinned) {
+                        Text("📌 ", fontSize = 13.sp)
+                    }
+                    Text(
+                        result.note.title.ifBlank { "Không có tiêu đề" },
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                if (result.matchedText.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        result.matchedText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                if (note.labels.isNotEmpty()) {
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        note.labels.take(3).forEach { label ->
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(50))
+                                    .background(SakuraPink.copy(alpha = 0.12f))
+                                    .padding(horizontal = 7.dp, vertical = 2.dp)
+                            ) {
+                                Text("#$label", fontSize = 10.sp, color = SakuraPink)
+                            }
+                        }
+                    }
+                }
             }
         }
     }

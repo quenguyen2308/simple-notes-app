@@ -32,7 +32,7 @@ class SettingsPrefs(context: Context) {
 
     /** Note list view mode — stores [com.yourname.simplenotes.ui.notes.NoteViewType.name]. */
     var noteViewType: String
-        get() = prefs.getString(KEY_VIEW_TYPE, "LIST") ?: "LIST"
+        get() = prefs.getString(KEY_VIEW_TYPE, "GRID") ?: "GRID"
         set(v) = edit { putString(KEY_VIEW_TYPE, v) }
 
     /** Auto-save while editing a note (vs. requiring an explicit save action). */

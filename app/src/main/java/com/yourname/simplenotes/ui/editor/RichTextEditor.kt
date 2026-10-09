@@ -1,10 +1,19 @@
 package com.yourname.simplenotes.ui.editor
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import com.yourname.simplenotes.ui.theme.FrostedGlassBgDark
+import com.yourname.simplenotes.ui.theme.FrostedGlassBgLight
+import com.yourname.simplenotes.ui.theme.FrostedGlassBorderDark
+import com.yourname.simplenotes.ui.theme.FrostedGlassBorderLight
+import com.yourname.simplenotes.ui.theme.SakuraPink
+import com.yourname.simplenotes.ui.theme.isAppInDarkTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -188,9 +197,35 @@ private fun ColorPickerDialog(title: String, onColorSelected: (Color) -> Unit, o
         Color(0xFF4CAF50), Color(0xFFCDDC39), Color(0xFFFF9800),
         Color(0xFFFF5722), Color.White
     )
+    val isDark = isAppInDarkTheme()
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(title) },
+        containerColor = if (isDark) FrostedGlassBgDark else FrostedGlassBgLight,
+        tonalElevation = 0.dp,
+        shape = RoundedCornerShape(28.dp),
+        modifier = Modifier.border(
+            BorderStroke(1.2.dp, if (isDark) FrostedGlassBorderDark else FrostedGlassBorderLight),
+            RoundedCornerShape(28.dp)
+        ),
+        icon = {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(52.dp)
+                    .background(SakuraPink.copy(alpha = 0.14f), CircleShape)
+                    .border(1.dp, SakuraPink.copy(alpha = 0.25f), CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Palette,
+                    contentDescription = null,
+                    tint = SakuraPink,
+                    modifier = Modifier.size(26.dp)
+                )
+            }
+        },
+        title = {
+            Text(title, fontWeight = FontWeight.Bold, color = SakuraPink)
+        },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 swatches.chunked(6).forEach { row ->
@@ -209,6 +244,12 @@ private fun ColorPickerDialog(title: String, onColorSelected: (Color) -> Unit, o
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Hủy") } }
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = SakuraPink)
+            ) { Text("Đóng", fontWeight = FontWeight.Bold) }
+        }
     )
 }

@@ -14,8 +14,23 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
+import com.yourname.simplenotes.ui.theme.FrostedGlassBgDark
+import com.yourname.simplenotes.ui.theme.FrostedGlassBgLight
+import com.yourname.simplenotes.ui.theme.FrostedGlassBorderDark
+import com.yourname.simplenotes.ui.theme.FrostedGlassBorderLight
+import com.yourname.simplenotes.ui.theme.FrostedGlassTileDark
+import com.yourname.simplenotes.ui.theme.FrostedGlassTileLight
+import com.yourname.simplenotes.ui.theme.SakuraBorderSoft
+import com.yourname.simplenotes.ui.theme.SakuraPink
+import com.yourname.simplenotes.ui.theme.SakuraSurface
+import com.yourname.simplenotes.ui.theme.SakuraSurfaceDark
+import com.yourname.simplenotes.ui.theme.isAppInDarkTheme
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.TextSelectionColors
@@ -158,7 +173,7 @@ fun NoteEditorScreen(
     // In dark mode: use deep obsidian slate tinted with note color to eliminate "flashbang" glare
     // while keeping note color identity; text is high-contrast crisp white.
     // In light mode: use custom pastel background + dark charcoal #1B1B1B text.
-    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val isDark = isAppInDarkTheme()
     val hasCustomColor = viewModel.backgroundColor != 0xFFFFFFFF.toInt() && viewModel.backgroundColor != 0
     val customColor = if (hasCustomColor) Color(viewModel.backgroundColor) else null
 
@@ -289,7 +304,9 @@ fun NoteEditorScreen(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .imePadding()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
                     .clip(RoundedCornerShape(28.dp)),
                 color           = MaterialTheme.colorScheme.surface,
                 shadowElevation = 6.dp,
@@ -446,7 +463,32 @@ fun NoteEditorScreen(
     if (showColorDialog) {
         AlertDialog(
             onDismissRequest = { showColorDialog = false },
-            title = { Text("Màu nền") },
+            containerColor = if (isDark) FrostedGlassBgDark else FrostedGlassBgLight,
+            tonalElevation = 0.dp,
+            shape = RoundedCornerShape(28.dp),
+            modifier = Modifier.border(
+                BorderStroke(1.2.dp, if (isDark) FrostedGlassBorderDark else FrostedGlassBorderLight),
+                RoundedCornerShape(28.dp)
+            ),
+            icon = {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(52.dp)
+                        .background(SakuraPink.copy(alpha = 0.14f), CircleShape)
+                        .border(1.dp, SakuraPink.copy(alpha = 0.25f), CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.FormatColorFill,
+                        contentDescription = null,
+                        tint = SakuraPink,
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
+            },
+            title = {
+                Text("Màu nền ghi chú", fontWeight = FontWeight.Bold, color = SakuraPink)
+            },
             text = {
                 NoteColorPicker(
                     selectedColor = viewModel.backgroundColor,
@@ -454,7 +496,11 @@ fun NoteEditorScreen(
                 )
             },
             confirmButton = {
-                TextButton(onClick = { showColorDialog = false }) { Text("Đóng") }
+                Button(
+                    onClick = { showColorDialog = false },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = SakuraPink)
+                ) { Text("Xong", fontWeight = FontWeight.Bold) }
             }
         )
     }
@@ -462,27 +508,81 @@ fun NoteEditorScreen(
     if (showCategoryDialog) {
         AlertDialog(
             onDismissRequest = { showCategoryDialog = false },
-            title = { Text("Chọn danh mục") },
+            containerColor = if (isDark) FrostedGlassBgDark else FrostedGlassBgLight,
+            tonalElevation = 0.dp,
+            shape = RoundedCornerShape(28.dp),
+            modifier = Modifier.border(
+                BorderStroke(1.2.dp, if (isDark) FrostedGlassBorderDark else FrostedGlassBorderLight),
+                RoundedCornerShape(28.dp)
+            ),
+            icon = {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(52.dp)
+                        .background(SakuraPink.copy(alpha = 0.14f), CircleShape)
+                        .border(1.dp, SakuraPink.copy(alpha = 0.25f), CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Category,
+                        contentDescription = null,
+                        tint = SakuraPink,
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
+            },
+            title = {
+                Text("Chọn danh mục", fontWeight = FontWeight.Bold, color = SakuraPink)
+            },
             text = {
-                Column {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     val opts = listOf(null) + categories
                     opts.forEach { cat ->
                         val isActive = cat?.id == viewModel.selectedCategoryId
-                        TextButton(
-                            onClick = { viewModel.onCategoryChange(cat?.id); showCategoryDialog = false },
-                            modifier = Modifier.fillMaxWidth()
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = if (isActive) SakuraPink.copy(alpha = 0.14f) else if (isDark) FrostedGlassTileDark else FrostedGlassTileLight,
+                            border = if (isActive) BorderStroke(1.5.dp, SakuraPink) else BorderStroke(1.dp, SakuraBorderSoft.copy(alpha = 0.5f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    viewModel.onCategoryChange(cat?.id)
+                                    showCategoryDialog = false
+                                }
                         ) {
-                            Text(
-                                cat?.name ?: "Không có danh mục",
-                                fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                            )
+                            Row(
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (cat == null) "📁" else "🏷️",
+                                    fontSize = 16.sp
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Text(
+                                    text = cat?.name ?: "Không có danh mục",
+                                    fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isActive) SakuraPink else MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (isActive) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = null,
+                                        tint = SakuraPink,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showCategoryDialog = false }) { Text("Đóng") }
+                OutlinedButton(
+                    onClick = { showCategoryDialog = false },
+                    shape = RoundedCornerShape(14.dp)
+                ) { Text("Đóng") }
             }
         )
     }
@@ -490,7 +590,32 @@ fun NoteEditorScreen(
     if (showLabelsDialog) {
         AlertDialog(
             onDismissRequest = { showLabelsDialog = false },
-            title = { Text("Nhãn") },
+            containerColor = if (isDark) FrostedGlassBgDark else FrostedGlassBgLight,
+            tonalElevation = 0.dp,
+            shape = RoundedCornerShape(28.dp),
+            modifier = Modifier.border(
+                BorderStroke(1.2.dp, if (isDark) FrostedGlassBorderDark else FrostedGlassBorderLight),
+                RoundedCornerShape(28.dp)
+            ),
+            icon = {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(52.dp)
+                        .background(SakuraPink.copy(alpha = 0.14f), CircleShape)
+                        .border(1.dp, SakuraPink.copy(alpha = 0.25f), CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Label,
+                        contentDescription = null,
+                        tint = SakuraPink,
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
+            },
+            title = {
+                Text("Quản lý nhãn", fontWeight = FontWeight.Bold, color = SakuraPink)
+            },
             text = {
                 NoteLabelSection(
                     labels = viewModel.labels,
@@ -499,7 +624,11 @@ fun NoteEditorScreen(
                 )
             },
             confirmButton = {
-                TextButton(onClick = { showLabelsDialog = false }) { Text("Đóng") }
+                Button(
+                    onClick = { showLabelsDialog = false },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = SakuraPink)
+                ) { Text("Xong", fontWeight = FontWeight.Bold) }
             }
         )
     }
@@ -507,16 +636,53 @@ fun NoteEditorScreen(
     if (showNoPasscodeDialog) {
         AlertDialog(
             onDismissRequest = { showNoPasscodeDialog = false },
-            title = { Text("Chưa có mật khẩu thiết bị") },
-            text = { Text("Thiết bị chưa có mật khẩu màn hình khoá. Vui lòng cài đặt PIN, hình vẽ hoặc mật khẩu trong Cài đặt để sử dụng tính năng khóa ghi chú.") },
+            containerColor = if (isDark) FrostedGlassBgDark else FrostedGlassBgLight,
+            tonalElevation = 0.dp,
+            shape = RoundedCornerShape(28.dp),
+            modifier = Modifier.border(
+                BorderStroke(1.2.dp, if (isDark) FrostedGlassBorderDark else FrostedGlassBorderLight),
+                RoundedCornerShape(28.dp)
+            ),
+            icon = {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(52.dp)
+                        .background(SakuraPink.copy(alpha = 0.14f), CircleShape)
+                        .border(1.dp, SakuraPink.copy(alpha = 0.25f), CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.LockReset,
+                        contentDescription = null,
+                        tint = SakuraPink,
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
+            },
+            title = {
+                Text("Chưa có mật khẩu thiết bị", fontWeight = FontWeight.Bold, color = SakuraPink)
+            },
+            text = {
+                Text(
+                    "Thiết bị chưa có mật khẩu màn hình khoá. Vui lòng cài đặt PIN, hình vẽ hoặc mật khẩu trong Cài đặt để sử dụng tính năng khóa ghi chú.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
             confirmButton = {
-                TextButton(onClick = {
-                    showNoPasscodeDialog = false
-                    context.startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS))
-                }) { Text("Đến Cài đặt") }
+                Button(
+                    onClick = {
+                        showNoPasscodeDialog = false
+                        context.startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS))
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = SakuraPink)
+                ) { Text("Đến Cài đặt", fontWeight = FontWeight.Bold) }
             },
             dismissButton = {
-                TextButton(onClick = { showNoPasscodeDialog = false }) { Text("Hủy") }
+                OutlinedButton(
+                    onClick = { showNoPasscodeDialog = false },
+                    shape = RoundedCornerShape(14.dp)
+                ) { Text("Hủy") }
             }
         )
     }
@@ -528,9 +694,41 @@ fun NoteEditorScreen(
         }
         AlertDialog(
             onDismissRequest = { showDetailsDialog = false },
-            title = { Text("Chi tiết ghi chú") },
+            containerColor = if (isDark) FrostedGlassBgDark else FrostedGlassBgLight,
+            tonalElevation = 0.dp,
+            shape = RoundedCornerShape(28.dp),
+            modifier = Modifier.border(
+                BorderStroke(1.2.dp, if (isDark) FrostedGlassBorderDark else FrostedGlassBorderLight),
+                RoundedCornerShape(28.dp)
+            ),
+            icon = {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(52.dp)
+                        .background(SakuraPink.copy(alpha = 0.14f), CircleShape)
+                        .border(1.dp, SakuraPink.copy(alpha = 0.25f), CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = null,
+                        tint = SakuraPink,
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
+            },
+            title = {
+                Text("Chi tiết ghi chú", fontWeight = FontWeight.Bold, color = SakuraPink)
+            },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(if (isDark) FrostedGlassTileDark else FrostedGlassTileLight)
+                        .border(BorderStroke(1.dp, SakuraBorderSoft.copy(alpha = 0.5f)), RoundedCornerShape(16.dp))
+                        .padding(14.dp)
+                ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
@@ -572,14 +770,19 @@ fun NoteEditorScreen(
                             Text(
                                 viewModel.labels.joinToString(", ") { "#$it" },
                                 style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold
+                                fontWeight = FontWeight.SemiBold,
+                                color = SakuraPink
                             )
                         }
                     }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showDetailsDialog = false }) { Text("Đóng") }
+                Button(
+                    onClick = { showDetailsDialog = false },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = SakuraPink)
+                ) { Text("Đóng", fontWeight = FontWeight.Bold) }
             }
         )
     }

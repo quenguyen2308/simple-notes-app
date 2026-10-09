@@ -61,7 +61,7 @@ class NoteListViewModel(
 
     /** Active view type (list / grid / detail) — restored from the last saved choice. */
     val viewType = MutableStateFlow(
-        runCatching { NoteViewType.valueOf(settingsPrefs.noteViewType) }.getOrDefault(NoteViewType.LIST)
+        runCatching { NoteViewType.valueOf(settingsPrefs.noteViewType) }.getOrDefault(NoteViewType.GRID)
     )
 
     /** All categories for the filter chip row. */

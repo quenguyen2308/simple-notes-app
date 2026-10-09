@@ -63,63 +63,63 @@ fun NoteActionsBottomSheet(
 
             // Move to folder
             ListItem(
-                headlineContent = { Text("Move to folder") },
+                headlineContent = { Text("Chuyển vào thư mục") },
                 leadingContent = {
                     Icon(Icons.Default.FolderOpen, contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        tint = com.yourname.simplenotes.ui.theme.SakuraPink)
                 },
                 modifier = Modifier.fillMaxWidth().clickable { onMoveToFolder(); onDismiss() }
             )
 
             // Add label
             ListItem(
-                headlineContent = { Text("Add label") },
+                headlineContent = { Text("Thêm nhãn") },
                 leadingContent = {
                     Icon(Icons.AutoMirrored.Filled.Label, contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        tint = com.yourname.simplenotes.ui.theme.SakuraPink)
                 },
                 modifier = Modifier.fillMaxWidth().clickable { onAddLabel(); onDismiss() }
             )
 
             // Change color
             ListItem(
-                headlineContent = { Text("Change color") },
+                headlineContent = { Text("Đổi màu nền") },
                 leadingContent = {
                     Icon(Icons.Default.Palette, contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        tint = com.yourname.simplenotes.ui.theme.SakuraPink)
                 },
                 modifier = Modifier.fillMaxWidth().clickable { onChangeColor(); onDismiss() }
             )
 
             // Pin / Unpin — text depends on current pin state
             ListItem(
-                headlineContent = { Text(if (note.isPinned) "Unpin" else "Pin") },
+                headlineContent = { Text(if (note.isPinned) "Bỏ ghim" else "Ghim lên đầu") },
                 leadingContent = {
                     Icon(Icons.Default.PushPin, contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        tint = com.yourname.simplenotes.ui.theme.SakuraPink)
                 },
                 modifier = Modifier.fillMaxWidth().clickable { onPin(); onDismiss() }
             )
 
             // Lock / Unlock
             ListItem(
-                headlineContent = { Text(if (note.isLocked) "Unlock" else "Lock") },
+                headlineContent = { Text(if (note.isLocked) "Mở khóa ghi chú" else "Khóa ghi chú") },
                 leadingContent = {
                     Icon(
                         if (note.isLocked) Icons.Default.LockOpen else Icons.Default.Lock,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = com.yourname.simplenotes.ui.theme.SakuraPink
                     )
                 },
                 modifier = Modifier.fillMaxWidth().clickable { onLock(); onDismiss() }
             )
 
-            HorizontalDivider()
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
             // Delete — destructive, shown in error color
             ListItem(
                 headlineContent = {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                    Text("Xóa ghi chú", color = MaterialTheme.colorScheme.error)
                 },
                 leadingContent = {
                     Icon(Icons.Default.Delete, contentDescription = null,
